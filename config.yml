@@ -1,0 +1,70 @@
+# Configuration for EM-GS vs 2D-GS Comparison
+# ================================================
+
+# Dataset Configuration
+dataset:
+  path: "./kodak"                    # Path to Kodak dataset
+  image_size: [256, 256]             # Resize images to this size
+  
+  # Image selection mode: "full", "random", or "list"
+  # - "full": Process all images in the dataset
+  # - "random": Randomly select N images (specify in random_count)
+  # - "list": Process specific images (specify in image_list)
+  selection_mode: "list"
+  
+  # For random mode: number of images to randomly select
+  random_count: 5
+  
+  # For list mode: specific kodak images to process (e.g., [1, 3, 5, 10, 24])
+  # Image numbers correspond to kodim01.png, kodim03.png, etc.
+  image_list: [8]
+  
+# Experiment Settings
+experiment:
+  name: "em_vs_2dgs_comparison"      # Experiment name
+  output_dir: "./results"            # Base output directory
+  save_plots: true                   # Save visualization plots
+  save_raw_data: true                # Save epoch-by-epoch metrics
+  plot_interval: 50                  # Plot every N epochs (for 2D-GS)
+
+# EM Algorithm Settings
+em:
+  enabled: true                      # Run EM algorithm
+  n_components: 100                 # Number of Gaussian components
+  covariance_type: "full"            # "full", "tied", "diag", "spherical"
+  max_iter: 100                      # Maximum EM iterations
+  init_params: "kmeans"              # "kmeans" or "random"
+
+# 2D Gaussian Splatting Settings
+gaussian_splatting:
+  enabled: true                      # Run 2D Gaussian Splatting
+  primary_samples: 2500              # Number of Gaussians
+  backup_samples: 0                  # Backup Gaussians for densification
+  num_epochs: 200                    # Training epochs
+  learning_rate: 0.01                # Learning rate
+  kernel_size: 33                    # Gaussian kernel size
+  chunk_size: 512                    # Rendering chunk size
+  
+  # Loss function
+  lambda_dssim: 0.2                  # Weight for dSSIM loss (1-lambda)*L1 + lambda*dSSIM
+  
+  # Densification & Pruning
+  densification: true               # Enable densification
+  densification_interval: 10         # Densify every N epochs
+  gradient_threshold: 0.01           # Gradient threshold for densification
+  gaussian_threshold: 1.2            # Size threshold for splitting
+  pruning: true                      # Enable pruning (alpha < 0.01)
+
+# Metrics to Track
+metrics:
+  compute_lpips: true                # Compute LPIPS (requires lpips library)
+  # Always computed: Loss, MSE, RMSE, PSNR, dSSIM, compression metrics
+  
+# Visualization
+visualization:
+  dpi: 150                           # Plot DPI
+  figsize: [15, 10]                  # Figure size
+  show_plots: false                  # Display plots during training
+
+# Device
+device: "cpu"                       # "cuda" or "cpu" (auto-detects if cuda available)
