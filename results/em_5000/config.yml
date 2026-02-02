@@ -1,0 +1,44 @@
+dataset:
+  image_list:
+  - 1
+  image_size:
+  - 256
+  - 256
+  path: ./kodak
+  random_count: 5
+  selection_mode: list
+device: cpu
+em:
+  covariance_type: full
+  enabled: true
+  init_params: kmeans
+  max_iter: 100
+  n_components: 5000
+experiment:
+  name: em_vs_2dgs_comparison
+  output_dir: ./results
+  plot_interval: 50
+  save_plots: true
+  save_raw_data: true
+gaussian_splatting:
+  backup_samples: 0
+  chunk_size: 512
+  densification: true
+  densification_interval: 10
+  enabled: true
+  gaussian_threshold: 1.2
+  gradient_threshold: 0.01
+  kernel_size: 33
+  lambda_dssim: 0.2
+  learning_rate: 0.01
+  num_epochs: 200
+  primary_samples: 2500
+  pruning: true
+metrics:
+  compute_lpips: true
+visualization:
+  dpi: 150
+  figsize:
+  - 15
+  - 10
+  show_plots: false
