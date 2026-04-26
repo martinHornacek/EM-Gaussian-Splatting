@@ -17,28 +17,33 @@ dataset:
   
   # For list mode: specific kodak images to process (e.g., [1, 3, 5, 10, 24])
   # Image numbers correspond to kodim01.png, kodim03.png, etc.
-  image_list: [1]
+  image_list: [15]
   
 # Experiment Settings
 experiment:
-  name: "em_vs_2dgs_comparison"      # Experiment name
-  output_dir: "./results"            # Base output directory
-  save_plots: true                   # Save visualization plots
-  save_raw_data: true                # Save epoch-by-epoch metrics
-  plot_interval: 50                  # Plot every N epochs (for 2D-GS)
+  output_dir: ./outputs
+  save_plots: true
+  save_renders: true
+  run_diagnostics: true
+  diagnostic_n_std: 2.0    # Number of standard deviations for diagnostic ellipses
 
-# EM Algorithm Settings
 em:
-  enabled: true                      # Run EM algorithm
-  n_components: 10000                 # Number of Gaussian components
-  covariance_type: "full"            # "full", "tied", "diag", "spherical"
-  max_iter: 100                      # Maximum EM iterations
-  init_params: "kmeans"              # "kmeans" or "random"
+  enabled: true
+  n_components: 256                # Number of Gaussian components
+  covariance_type: full            # 'full', 'diag', 'spherical', 'tied'
+  max_iter: 500                    # Maximum EM iterations
+  init_params: kmeans              # Initialization method
+  verbose: false
+  
+  # Mini-batch EM settings
+  minibatch:
+    subsample_ratio: 0.15          # Fraction of pixels to subsample (0.0–1.0)
+    min_samples: 5000              # Minimum number of pixels to use
 
 # 2D Gaussian Splatting Settings
 gaussian_splatting:
   enabled: true                      # Run 2D Gaussian Splatting
-  primary_samples: 5000              # Number of Gaussians
+  primary_samples: 5000             # Number of Gaussians
   backup_samples: 0                  # Backup Gaussians for densification
   num_epochs: 200                    # Training epochs
   learning_rate: 0.01                # Learning rate
