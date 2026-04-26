@@ -8,11 +8,11 @@ Entry point
 Where fitted_variants is a dict:
     {
         'standard':  SplatFit(...),
-        'augmented': SplatFit(...),
+        'minibatch': SplatFit(...),
     }
 
 Each SplatFit carries the GMM parameters needed to recompute responsibilities
-and draw ellipses — see extract_splat_fit() below.
+and draw ellipses.
 
 Panels produced
 ---------------
@@ -32,7 +32,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.patches import Ellipse
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from scipy.stats import multivariate_normal
 from skimage.filters import sobel
@@ -68,66 +68,6 @@ class SplatFit:
     converged:        bool
     feature_dim:      int
     variant:          str
-
-
-def extract_splat_fit(gmm, covariance_type, h, w,
-                      data_for_responsibilities=None,
-                      feature_dim=5,
-                      variant='unknown',
-                      timing=None):
-    """
-    Build a SplatFit from a fitted sklearn GaussianMixture.
-
-    Parameters
-    ----------
-    gmm                    : fitted GaussianMixture
-    covariance_type        : str  ('full', 'tied', 'diag', 'spherical')
-    h, w                   : image dimensions
-    data_for_responsibilities : (N, D) array to recompute r from; pass the
-                               same data used to fit the GMM
-    feature_dim            : D (dimensionality of fitting space)
-    variant                : name string
-    timing                 : dict returned by fit_*_and_render (optional)
-    """
-    K = gmm.n_components
-    means_pos  = gmm.means_[:, :2] * np.array([[w, h]])
-    colors     = np.clip(gmm.means_[:, 2:5], 0, 1)
-    weights    = gmm.weights_
-
-    # Spatial covariance in pixel space
-    if covariance_type == 'full':
-        covs_pos = gmm.covariances_[:, :2, :2] * np.array([[[w, h], [w, h]]]) ** 2
-    elif covariance_type == 'tied':
-        cov = gmm.covariances_
-        covs_pos = np.tile(cov[:2, :2] * np.array([[w, h], [w, h]]) ** 2, (K, 1, 1))
-    elif covariance_type == 'diag':
-        covs_pos = np.zeros((K, 2, 2))
-        covs_pos[:, 0, 0] = gmm.covariances_[:, 0] * w ** 2
-        covs_pos[:, 1, 1] = gmm.covariances_[:, 1] * h ** 2
-    elif covariance_type == 'spherical':
-        covs_pos = np.zeros((K, 2, 2))
-        covs_pos[:, 0, 0] = gmm.covariances_ * w ** 2
-        covs_pos[:, 1, 1] = gmm.covariances_ * h ** 2
-    else:
-        raise ValueError(f"Unsupported covariance_type: {covariance_type}")
-
-    # Responsibilities
-    r = None
-    if data_for_responsibilities is not None:
-        r = gmm.predict_proba(data_for_responsibilities)   # (N, K)
-
-    t = timing or {}
-    return SplatFit(
-        means_pos=means_pos,
-        covs_pos=covs_pos,
-        colors=colors,
-        weights=weights,
-        responsibilities=r,
-        n_iter=getattr(gmm, 'n_iter_', -1),
-        converged=getattr(gmm, 'converged_', False),
-        feature_dim=feature_dim,
-        variant=variant,
-    )
 
 
 # ---------------------------------------------------------------------------

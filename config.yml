@@ -24,6 +24,8 @@ experiment:
   output_dir: ./outputs
   save_plots: true
   save_renders: true
+  save_raw_data: true
+  plot_interval: 50        # Save intermediate plot every N epochs (2D-GS)
   run_diagnostics: true
   diagnostic_n_std: 2.0    # Number of standard deviations for diagnostic ellipses
 
@@ -32,8 +34,6 @@ em:
   n_components: 256                # Number of Gaussian components
   covariance_type: full            # 'full', 'diag', 'spherical', 'tied'
   max_iter: 500                    # Maximum EM iterations
-  init_params: kmeans              # Initialization method
-  verbose: false
   
   # Mini-batch EM settings
   minibatch:
@@ -48,7 +48,6 @@ gaussian_splatting:
   num_epochs: 200                    # Training epochs
   learning_rate: 0.01                # Learning rate
   kernel_size: 33                    # Gaussian kernel size
-  chunk_size: 512                    # Rendering chunk size
   
   # Loss function
   lambda_dssim: 0.2                  # Weight for dSSIM loss (1-lambda)*L1 + lambda*dSSIM
@@ -65,11 +64,5 @@ metrics:
   compute_lpips: true                # Compute LPIPS (requires lpips library)
   # Always computed: Loss, MSE, RMSE, PSNR, dSSIM, compression metrics
   
-# Visualization
-visualization:
-  dpi: 150                           # Plot DPI
-  figsize: [15, 10]                  # Figure size
-  show_plots: false                  # Display plots during training
-
 # Device
 device: "cpu"                       # "cuda" or "cpu" (auto-detects if cuda available)
