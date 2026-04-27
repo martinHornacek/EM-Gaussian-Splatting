@@ -55,9 +55,9 @@ hybrid_residual:
   enabled: true
 
   # Gaussian budget
-  n_total: 2500
-  n_init: 250
-  n_per_iter: 160
+  n_total: 2048
+  n_init: 256              # 12.5% seed
+  n_per_iter: 128          # (2048 - 256) / 14 = 128
   max_iter: 14
 
   residual_threshold: 0.0001
