@@ -1,0 +1,80 @@
+# config_kodak_full.yml
+# Hybrid residual refinement — MINIBATCH variant — full 24-image Kodak dataset.
+#
+# Run:
+#   python run_hybrid_residual.py --config config_kodak_full.yml
+#
+# Expected runtime: ~3–5 min per image, ~90–120 min total (CPU).
+# Results land in:  outputs/hybrid_residual_<timestamp>/
+# ============================================================
+
+dataset:
+  path: "./kodak"
+  image_size: [256, 256]
+  selection_mode: "full"          # all 24 Kodak images
+  random_count: 5
+  image_list: [15]                # ignored when selection_mode = full
+
+experiment:
+  output_dir: ./outputs
+  save_plots: true
+  save_renders: true
+  save_raw_data: false            # skip .npz Gaussian dumps to save disk space
+  plot_interval: 50
+  run_diagnostics: true
+  diagnostic_n_std: 2.0
+
+em:
+  enabled: true                   # used by _initial_em_fit inside hybrid
+  n_components: 2500
+  covariance_type: full
+  max_iter: 500
+  minibatch:
+    subsample_ratio: 0.15
+    min_samples: 5000
+
+gaussian_splatting:
+  enabled: false                  # not used in this experiment
+  primary_samples: 2500
+  backup_samples: 0
+  num_epochs: 200
+  learning_rate: 0.01
+  kernel_size: 33
+  lambda_dssim: 0.2
+  densification: true
+  densification_interval: 10
+  gradient_threshold: 0.01
+  gaussian_threshold: 1.2
+  pruning: true
+
+hybrid_residual:
+  enabled: true
+
+  # Gaussian budget
+  n_total: 2500
+  n_init: 250              # 10% seed
+  n_per_iter: 160          # (2500 - 250) / 14 = 160.7
+  max_iter: 14
+
+  residual_threshold: 0.0001
+  step_size: 1.0
+
+  # --- VARIANT: MINIBATCH ---
+  # Initial EM fit uses subsampled data; residual GMMs capped at 20 000 px.
+  em_variant: "minibatch"
+  use_minibatch: true
+
+  # Disable pure-EM baseline to keep runtime focused on the hybrid
+  compare_pure_em: false
+
+  visualize:
+    enabled: false          # no per-image videos for a 24-image batch run
+    fps: 2
+    make_mp4: false
+    make_gif: false
+    n_std_ellipse: 2.0
+
+metrics:
+  compute_lpips: true
+
+device: "cpu"

@@ -322,6 +322,7 @@ def run_em_algorithm(config_path='config.yml'):
 
     print(f"\n✓ Done. Results saved to: {output_dir}")
     print("=" * 70 + "\n")
+    return output_dir
 
 
 if __name__ == "__main__":

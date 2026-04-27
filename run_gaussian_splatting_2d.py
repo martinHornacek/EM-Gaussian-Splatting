@@ -543,6 +543,7 @@ def run_gaussian_splatting_2d(config_path='config.yml'):
     
     print(f"\n✓ 2D Gaussian Splatting complete! Results saved to: {output_dir}")
     print("="*70 + "\n")
+    return output_dir
 
 
 if __name__ == "__main__":

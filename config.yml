@@ -59,6 +59,53 @@ gaussian_splatting:
   gaussian_threshold: 1.2            # Size threshold for splitting
   pruning: true                      # Enable pruning (alpha < 0.01)
 
+# Hybrid Residual Refinement Settings
+# ======================================
+# Iterative residual correction on top of an initial EM approximation.
+# Positive and negative residuals are fitted separately so the correction
+# can both add and subtract intensity.
+hybrid_residual:
+  enabled: true
+
+  # Gaussian budget
+  n_total: 1024         # Total Gaussians across all stages (initial + residual)
+  n_init: 128           # Gaussians used in the initial EM approximation (n_init < n_total)
+  n_per_iter: 64        # Gaussians added per refinement iteration
+
+  # Stopping criteria
+  max_iter: 14          # Maximum refinement iterations  (1024-128)/64 = 14 fills budget exactly
+  residual_threshold: 0.0001  # Stop early when mean |residual| falls below this
+
+  # Correction damping: scale applied to (I_pos_corr − I_neg_corr) each step.
+  # 1.0 = full correction, lower values reduce overshoot at the cost of slower convergence.
+  step_size: 1.0
+
+  # EM variant for the INITIAL fit ('standard' = full dataset, 'minibatch' = subsampled)
+  em_variant: "minibatch"
+
+  # When true (default), each residual EM fit is capped at max(n_comp*20, 20 000) samples.
+  # Set to false for full-dataset fitting (more accurate, slower).
+  use_minibatch: true
+
+  # Run pure EM with n_total Gaussians as a quality baseline for comparison
+  compare_pure_em: true
+
+  # Visualization — per-iteration frames and animated videos
+  visualize:
+    enabled: true
+
+    # Playback speed for GIF / MP4 output
+    fps: 2
+
+    # MP4 video (requires:  pip install imageio imageio-ffmpeg)
+    make_mp4: true
+
+    # Animated GIF (Pillow — always available, lower quality than MP4)
+    make_gif: false
+
+    # Sigma level used when drawing Gaussian ellipse contours on residuals
+    n_std_ellipse: 2.0
+
 # Metrics to Track
 metrics:
   compute_lpips: true                # Compute LPIPS (requires lpips library)

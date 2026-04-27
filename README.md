@@ -323,3 +323,25 @@ MIT License - Feel free to use for research and commercial purposes.
 ---
 
 **Questions? Issues?** Open an issue or contact martin.hornacek@stuba.sk
+
+Experiment plan: two hybrid runs
+
+Run 1 — Minibatch (~90–120 min):
+```
+.\.venv\Scripts\python.exe run_hybrid_residual.py --config config_kodak_full.yml
+```
+
+Run 2 — Full-batch (~3–6 hours, run overnight):
+```
+.\.venv\Scripts\python.exe run_hybrid_residual.py --config config_kodak_full_fullbatch.yml
+```
+Both configs: 24 images, 2500 Gaussians, identical budget split (250 seed + 14 × 160), no videos, LPIPS enabled. The only difference is use_minibatch: true/false and em_variant.
+
+Analysis after both runs complete
+```
+.\.venv\Scripts\python.exe scripts/analyze_hybrid_kodak.py `
+    --minibatch outputs/hybrid_residual_<ts_mb>/results.csv `
+    --fullbatch outputs/hybrid_residual_<ts_fb>/results.csv `
+    --out       results/hybrid_kodak_eval
+```
+The script prints a formatted aggregate table (mean ± std across all 24 images) with literature reference numbers for context, saves per-image bar charts, and a violin plot of the metric distributions. The literature table in analyze_hybrid_kodak.py includes JPEG/JPEG2000/BPG, neural compression baselines (Ballé 2018, Minnen 2018, Cheng 2020), and 3D-GS for orientation — with a note that direct comparison requires matched bpp and resolution.
