@@ -208,7 +208,8 @@ def fit_em_to_distribution(img_np, n_components, em_config, use_minibatch=True):
     # Sample pool size
     n_pixels = len(data_5d)
     if use_minibatch:
-        n_sub = max(n_components * 20, min(20_000, n_pixels))
+        max_mb = em_config.get('minibatch', {}).get('max_minibatch_samples', 20_000)
+        n_sub = max(n_components * 20, min(max_mb, n_pixels))
     else:
         n_sub = n_pixels   # full-batch: draw from all pixels
 

@@ -1,0 +1,91 @@
+# config_kodak_native_minibatch.yml
+# Hybrid residual refinement — MINIBATCH variant — native Kodak resolution.
+#
+# Kodak images are 768×512 (landscape, 18 images) and 512×768 (portrait, 6 images).
+# Setting image_size to null disables downsampling so images are processed at
+# their original resolution.
+#
+# bpp at native resolution (768×512 = 393,216 pixels):
+#   K=2048 → 2048 × 9 × 32 / 393,216 = 1.50 bpp
+#   K=1024 → 0.75 bpp
+#
+# Run:
+#   python run_hybrid_residual.py --config config_kodak_native_minibatch.yml
+#
+# Expected runtime: ~15–30 min per image, ~6–12 hours total (CPU).
+# Results land in:  outputs/hybrid_residual_<timestamp>/
+# ============================================================
+
+dataset:
+  path: "./kodak"
+  image_size: null              # null = no resize; use native Kodak resolution
+  selection_mode: "full"        # all 24 Kodak images
+  random_count: 5
+  image_list: [15]              # ignored when selection_mode = full
+
+experiment:
+  output_dir: ./outputs
+  save_plots: true
+  save_renders: true
+  save_raw_data: false
+  plot_interval: 50
+  run_diagnostics: true
+  diagnostic_n_std: 2.0
+
+em:
+  enabled: true
+  n_components: 2500
+  covariance_type: full
+  max_iter: 500
+  minibatch:
+    subsample_ratio: 0.15
+    min_samples: 5000
+    # Raised from 20,000 to 50,000 to maintain adequate pixel coverage at
+    # native resolution (393,216 pixels vs. 65,536 at 256×256).
+    # 50,000 / 393,216 ≈ 12.7% — comparable to the 30% used at 256×256.
+    max_minibatch_samples: 50000
+
+gaussian_splatting:
+  enabled: false
+  primary_samples: 2500
+  backup_samples: 0
+  num_epochs: 200
+  learning_rate: 0.01
+  kernel_size: 33
+  lambda_dssim: 0.2
+  densification: true
+  densification_interval: 10
+  gradient_threshold: 0.01
+  gaussian_threshold: 1.2
+  pruning: true
+
+hybrid_residual:
+  enabled: true
+
+  # Gaussian budget
+  # bpp = K × 9 × 32 / (768 × 512) = K × 288 / 393,216
+  # K=2048 → 1.50 bpp  (good starting point for comparison with JPEG ~75)
+  n_total: 2048
+  n_init: 256              # n_total / 8
+  n_per_iter: 128          # (2048 - 256) / 14 = 128
+  max_iter: 14
+
+  residual_threshold: 0.0001
+  step_size: 1.0
+
+  em_variant: "minibatch"
+  use_minibatch: true
+
+  compare_pure_em: false
+
+  visualize:
+    enabled: false
+    fps: 2
+    make_mp4: false
+    make_gif: false
+    n_std_ellipse: 2.0
+
+metrics:
+  compute_lpips: true
+
+device: "cpu"

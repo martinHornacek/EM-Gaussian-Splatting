@@ -217,8 +217,10 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
     for img_idx, img_path in enumerate(image_paths, 1):
         print(f"\n[{img_idx}/{len(image_paths)}] {img_path.name}")
 
-        img   = Image.open(img_path).convert('RGB')
-        img   = img.resize(tuple(config['dataset']['image_size']), Image.LANCZOS)
+        img        = Image.open(img_path).convert('RGB')
+        image_size = config['dataset'].get('image_size')
+        if image_size:
+            img = img.resize(tuple(image_size), Image.LANCZOS)
         gt_np = np.array(img).astype(np.float32) / 255.0
         h, w  = gt_np.shape[:2]
         isize = (h, w)
