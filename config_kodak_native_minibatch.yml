@@ -71,7 +71,7 @@ hybrid_residual:
   max_iter: 14
 
   residual_threshold: 0.0001
-  step_size: 1.0
+  step_size: 0.5
 
   em_variant: "minibatch"
   use_minibatch: true

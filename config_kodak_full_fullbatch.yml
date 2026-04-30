@@ -61,7 +61,7 @@ hybrid_residual:
   max_iter: 14
 
   residual_threshold: 0.0001
-  step_size: 1.0
+  step_size: 0.5
 
   # --- VARIANT: FULL-BATCH ---
   # Initial EM fit uses full pixel array; residual GMMs also use full pixel set.

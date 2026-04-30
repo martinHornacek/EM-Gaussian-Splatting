@@ -3,17 +3,41 @@ run_hybrid_residual.py — Hybrid Gaussian Splatting with Iterative Residual Ref
 
 Algorithm
 ---------
-Step 1  Fit N_init Gaussians to I_gt using EM -> render I_init.
+Step 1  Fit N_init Gaussians to I_gt using EM -> render I_init via render_gaussians.
 Step 2  Compute residual:  I_res = I_gt - I_current.
 Step 3  Split:  I_pos = max(I_res, 0),  I_neg = max(-I_res, 0).
-Step 4  Fit EM to I_pos (weighted by intensity) -> positive correction render.
-        Fit EM to I_neg (weighted by intensity) -> negative correction render.
-        Gaussians are allocated adaptively (more to the larger residual mass).
-Step 5  Apply: I_current = clip(I_current + step * (I_pos_corr − I_neg_corr), 0, 1)
-Step 6  Repeat steps 2–5 until total Gaussians ≥ N_total or residual < threshold.
+Step 4  Fit EM to I_pos (intensity-weighted) to find n_pos Gaussian components.
+        Fit EM to I_neg (intensity-weighted) to find n_neg Gaussian components.
+        Render each set with render_gaussians_signed using the LEARNED residual
+        colours — no ground-truth values are used in the correction.
+Step 5  Apply: I_current = clip(I_current + step*(I_pos_corr - I_neg_corr), 0, 1)
+Step 6  Repeat steps 2-5 until total Gaussians >= N_total or residual < threshold.
 
-Positive and negative correction Gaussians are stored with +1 / −1 amplitudes
-respectively and can be retrieved as a unified signed Gaussian set at the end.
+HOW THE CORRECTION WORKS
+--------------------------
+render_gaussians_signed(means, covs, colors, amplitudes=+1, isize) produces:
+
+    correction[p] = sum_k( pdf_k(p)/max(pdf_k) * color_k )
+
+where color_k is the RGB mean of the residual cluster k as learned by EM.
+This is purely Gaussian-based — the correction at each pixel is the
+weighted sum of Gaussian residual colours, NOT the actual residual value.
+The Gaussians approximate where and how much to correct; the quality of
+the correction depends only on how well EM captures the residual structure.
+
+Unlike the previous 'render_residual_correction' approach (which used
+gt_np directly as the correction magnitude), this approach can overshoot
+at pixels where the learned cluster colour exceeds the local residual.
+Step_size <= 0.5 limits overshoot; overshoots become negative residuals
+that are corrected in subsequent iterations.
+
+DEPRECATED oracle_clamp mode (kept for comparison only)
+---------------------------------------------------------
+oracle_clamp: true restores the original buggy behaviour:
+  correction[p] = clip(step*(render_gaussians - subtract), -I_res_neg, I_res_pos)
+This bounds every pixel correction to the EXACT residual (using gt_np),
+which guarantees PSNR is non-decreasing — a data leakage signature.
+Do not use oracle_clamp: true for publication.
 
 Configuration (hybrid_residual section of config.yml)
 ------------------------------------------------------
@@ -22,7 +46,9 @@ n_init             — Gaussians in the initial EM fit             [64]
 n_per_iter         — Gaussians added per refinement iteration    [32]
 max_iter           — maximum refinement iterations               [14]
 residual_threshold — stop when mean |residual| is below this    [0.001]
-step_size          — correction damping factor ∈ (0, 1]          [1.0]
+step_size          — correction damping, keep <= 0.5 to limit
+                     Gaussian overshoot at cluster boundaries    [0.5]
+oracle_clamp       — DEPRECATED: bound delta by residual        [false]
 em_variant         — 'standard' or 'minibatch' for initial fit  ['minibatch']
 compare_pure_em    — also run pure EM with n_total Gaussians     [true]
 """
@@ -40,7 +66,7 @@ from utils.metrics_utils import evaluate_metrics
 from utils.dataset_utils import select_images
 from utils.em_utils import (
     load_config, download_kodak_dataset, _prepare_data,
-    render_gaussians, fit_em_to_distribution,
+    render_gaussians, render_gaussians_signed, fit_em_to_distribution,
 )
 from utils.hybrid_vis_utils import (
     save_render_frame,
@@ -159,6 +185,10 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
     max_iter        = hr_cfg.get('max_iter', 14)
     res_threshold   = hr_cfg.get('residual_threshold', 0.001)
     step_size       = float(hr_cfg.get('step_size', 1.0))
+    # oracle_clamp: DEPRECATED legacy mode.  When True the correction is bounded
+    # pixel-wise by the exact residual (gt_np) — DATA LEAKAGE, inflates metrics.
+    # Default False: uses render_gaussians_signed with learned residual colours.
+    oracle_clamp    = bool(hr_cfg.get('oracle_clamp', False))
     em_variant      = hr_cfg.get('em_variant', 'minibatch')
     compare_pure_em = hr_cfg.get('compare_pure_em', True)
     use_minibatch   = hr_cfg.get('use_minibatch', True)
@@ -196,6 +226,13 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
     print(f"  step_size={step_size}  residual_threshold={res_threshold}")
     print(f"  em_variant={em_variant_actual}  use_minibatch={use_minibatch}"
           f"  compare_pure_em={compare_pure_em}")
+    if oracle_clamp:
+        print("  oracle_clamp=TRUE  *** DATA LEAKAGE — metrics will be inflated ***")
+        print("  The correction is clamped to the exact residual each iteration.")
+        print("  PSNR will be monotonically non-decreasing (oracle signature).")
+        print("  Set oracle_clamp: false for honest evaluation (recommended).")
+    else:
+        print("  oracle_clamp=false  correction = render_gaussians_signed (pure Gaussian, no gt mixing)")
     print("=" * 70)
 
     timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -366,7 +403,15 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
                 if pos_params is not None:
                     m, c, col, wt = pos_params
                     n_added_pos    = len(m)   # may be < n_pos when data is sparse
-                    I_pos_corr = render_gaussians(m, c, col, wt, isize)
+                    # Pure Gaussian correction: render the learned residual colours
+                    # via their spatial Gaussian profiles.  No ground truth used.
+                    # correction[p] = sum_k( pdf_k(p)/max(pdf_k) * learned_color_k )
+                    # Oracle mode (deprecated): render_gaussians + oracle clamp.
+                    if oracle_clamp:
+                        I_pos_corr = render_gaussians(m, c, col, wt, isize)
+                    else:
+                        I_pos_corr = render_gaussians_signed(
+                            m, c, col, np.ones(len(m), dtype=np.float32), isize)
                     all_means.extend(list(m))
                     all_covs.extend(list(c))
                     all_colors.extend(list(col))
@@ -390,7 +435,11 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
                 if neg_params is not None:
                     m, c, col, wt = neg_params
                     n_added_neg    = len(m)   # may be < n_neg when data is sparse
-                    I_neg_corr = render_gaussians(m, c, col, wt, isize)
+                    if oracle_clamp:
+                        I_neg_corr = render_gaussians(m, c, col, wt, isize)
+                    else:
+                        I_neg_corr = render_gaussians_signed(
+                            m, c, col, np.ones(len(m), dtype=np.float32), isize)
                     all_means.extend(list(m))
                     all_covs.extend(list(c))
                     all_colors.extend(list(col))
@@ -404,14 +453,31 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
                         cum_gid += 1
 
             # ---- Apply correction ------------------------------------------ #
-            # Clamp each pixel's correction to its own residual bounds so the
-            # correction can never overshoot I_gt — guaranteeing that the
-            # per-pixel residual magnitude is non-increasing every iteration.
-            I_delta = np.clip(
-                step_size * (I_pos_corr - I_neg_corr),
-                -I_res_neg,   # can't darken beyond the negative residual here
-                I_res_pos,    # can't brighten beyond the positive residual here
+            # I_pos_corr and I_neg_corr are rendered from EM-learned Gaussian
+            # colours — no ground truth is used.  The net correction is:
+            #   delta[p] = step * (I_pos_corr[p] - I_neg_corr[p])
+            # This can overshoot when the learned cluster colour exceeds the
+            # actual local residual.  step_size <= 0.5 limits overshoot;
+            # any residual overshoot flips sign and is corrected next iteration.
+            # oracle_clamp=True restores the old data-leakage behaviour.
+            raw_delta = step_size * (I_pos_corr - I_neg_corr)
+
+            if oracle_clamp:
+                # DEPRECATED: data-leakage mode kept for backward compatibility
+                I_delta = np.clip(raw_delta, -I_res_neg, I_res_pos)
+            else:
+                I_delta = raw_delta   # honest: no oracle bound
+
+            # Track pixels where the Gaussian correction overshoots the actual
+            # residual — a measure of how well the GMM approximates the residual.
+            # In oracle_clamp mode this is the fraction that was oracle-clamped.
+            n_pixels       = gt_np.size
+            overshoot_px   = int(
+                ((raw_delta >  I_res_pos) & (I_res_pos > 1e-8)).sum() +
+                ((raw_delta < -I_res_neg) & (I_res_neg > 1e-8)).sum()
             )
+            oracle_pct     = 100.0 * overshoot_px / n_pixels
+
             I_current = np.clip(
                 I_current + I_delta,
                 0.0, 1.0,
@@ -427,19 +493,23 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
             it_metrics['loss'] = ((1.0 - lambda_dssim) * it_metrics['l1']
                                   + lambda_dssim * it_metrics['dssim'])
             iter_records.append({
-                'iteration':     it + 1,
-                'n_pos':         n_pos,
-                'n_neg':         n_neg,
-                'mean_residual': mean_abs_res,
+                'iteration':        it + 1,
+                'n_pos':            n_pos,
+                'n_neg':            n_neg,
+                'mean_residual':    mean_abs_res,
+                'oracle_clamp_pct': oracle_pct,
                 **it_metrics,
                 # Override the 'n_gaussians' key from compression metrics so the
                 # authoritative running total takes precedence in this record.
                 'n_gaussians':   n_gaussians_total,
             })
+            clamp_tag = (f"  oracle_clamp={oracle_pct:.1f}% [DEPRECATED]"
+                         if oracle_clamp else
+                         f"  (Gaussian overshoot {oracle_pct:.1f}% of px)")
             print(f"       PSNR={it_metrics['psnr']:.2f} dB  "
                   f"SSIM={it_metrics['ssim']:.4f}  "
                   f"RMSE={it_metrics['rmse']:.4f}  "
-                  f"Loss={it_metrics['loss']:.4f}")
+                  f"Loss={it_metrics['loss']:.4f}{clamp_tag}")
 
             # Residual snapshot for post-run diagnostic grid
             residual_snapshots.append(np.mean(np.abs(gt_np - I_current), axis=2))
@@ -578,6 +648,7 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
             'n_gaussians_final': n_gaussians_total,
             'n_iterations':      len(iter_records),
             'total_time':        total_time,
+            'oracle_clamp':      oracle_clamp,
             'init_psnr':         init_metrics['psnr'],
             'init_ssim':         init_metrics['ssim'],
             **{f'hybrid_{k}': v for k, v in final_metrics.items()},

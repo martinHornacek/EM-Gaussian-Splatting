@@ -1,0 +1,84 @@
+# config_audit.yml
+# -----------------
+# Minimal config for running the oracle-vs-honest audit:
+#   python run_hybrid_residual.py --config config_audit.yml
+#
+# Processes 3 varied Kodak images at native resolution.
+# Saves all raw data (Gaussians, logs) and enables visualization (MP4).
+# Both oracle_clamp: false (honest) results are produced.
+# Run with oracle_clamp: true as well to quantify the inflation.
+
+dataset:
+  path: "./kodak"
+  image_size: null         # native resolution (768×512 or 512×768)
+  selection_mode: "list"
+  image_list: [3, 10, 13]  # soft (kodim03), textured (kodim10), complex (kodim13)
+  random_count: 3
+
+experiment:
+  output_dir: ./outputs
+  save_plots: true
+  save_renders: true
+  save_raw_data: true      # saves .npz Gaussian parameters and gaussian_log.csv
+  plot_interval: 50
+  run_diagnostics: true
+  diagnostic_n_std: 2.0
+
+em:
+  enabled: true
+  n_components: 256
+  covariance_type: full
+  max_iter: 500
+  minibatch:
+    subsample_ratio: 0.15
+    min_samples: 5000
+    max_minibatch_samples: 50000
+
+gaussian_splatting:
+  enabled: false
+  primary_samples: 2500
+  backup_samples: 0
+  num_epochs: 200
+  learning_rate: 0.01
+  kernel_size: 33
+  lambda_dssim: 0.2
+  densification: true
+  densification_interval: 10
+  gradient_threshold: 0.01
+  gaussian_threshold: 1.2
+  pruning: true
+
+hybrid_residual:
+  enabled: true
+  n_total: 128        # small budget — inflated vs honest gap is most visible here
+  n_init: 16
+  n_per_iter: 8
+  max_iter: 14
+  residual_threshold: 0.0001
+  step_size: 0.5   # render_gaussians_signed can overshoot at cluster boundaries
+                  # (learned mean colour > actual residual at edge pixels).
+                  # step_size=0.5 halves each correction, limiting overshoot;
+                  # flipped residuals are corrected in subsequent iterations.
+                  # Keep <= 0.5; set to 0.3 for very conservative convergence.
+
+  # oracle_clamp: DEPRECATED -- set to true to restore old behaviour.
+  # When true, corrections are bounded by the exact residual at each pixel,
+  # which introduces data leakage (oracle feedback) and inflates PSNR/SSIM.
+  # Default is false for honest evaluation.
+  oracle_clamp: false
+
+  em_variant: "minibatch"
+  use_minibatch: true
+  compare_pure_em: true
+
+  visualize:
+    enabled: true
+    fps: 2
+    make_mp4: true
+    make_gif: false
+    n_std_ellipse: 2.0
+
+metrics:
+  compute_lpips: false   # set true if lpips is installed
+
+device: "cpu"

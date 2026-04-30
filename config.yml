@@ -76,9 +76,20 @@ hybrid_residual:
   max_iter: 14          # Maximum refinement iterations  (1024-128)/64 = 14 fills budget exactly
   residual_threshold: 0.0001  # Stop early when mean |residual| falls below this
 
-  # Correction damping: scale applied to (I_pos_corr − I_neg_corr) each step.
-  # 1.0 = full correction, lower values reduce overshoot at the cost of slower convergence.
-  step_size: 1.0
+  # oracle_clamp: DEPRECATED — set to true to restore old behaviour.
+  # When true, corrections are bounded by the exact residual at each pixel,
+  # which introduces data leakage (oracle feedback) and inflates PSNR/SSIM.
+  # Default is false for honest evaluation.
+  oracle_clamp: false
+
+  # Correction damping: scale applied to (I_pos_corr - I_neg_corr) each step.
+  # With render_gaussians_signed the correction at a pixel is the Gaussian's
+  # learned mean colour (not the actual residual), which can overshoot pixels
+  # at cluster edges where the true residual is smaller than the mean colour.
+  # Keep step_size <= 0.5 to limit overshoot; any residual over-correction
+  # flips sign and is absorbed in the next iteration.
+  # With oracle_clamp: true (deprecated), keep step_size <= 0.5.
+  step_size: 0.5
 
   # EM variant for the INITIAL fit ('standard' = full dataset, 'minibatch' = subsampled)
   em_variant: "minibatch"

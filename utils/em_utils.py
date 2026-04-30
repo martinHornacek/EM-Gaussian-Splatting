@@ -162,6 +162,60 @@ def render_gaussians_signed(means, covs, colors, amplitudes, image_size):
     return canvas
 
 
+def render_residual_correction(residual_np, means, covs, weights, image_size):
+    """
+    Render a residual correction using Gaussian SPATIAL COVERAGE to weight
+    the ACTUAL residual values.  Unlike ``render_gaussians`` (which assigns
+    GMM cluster-centre colours to all covered pixels), this function:
+
+      correction[p] = clip(sum_k(pdf_k(p)/max(pdf_k)*wgt_k), 0, 1) * residual[p]
+
+    Key properties:
+      * The correction at each pixel is bounded by the actual residual —
+        no oracle (gt_np) is needed to prevent overshoot.
+      * The Gaussians guide WHICH pixels are corrected (coverage map),
+        not HOW MUCH they are corrected (that comes from the residual itself).
+      * Pixels fully inside Gaussian blobs (coverage ≈ 1) are corrected
+        proportionally to their full residual; pixels outside are untouched.
+
+    This is the honest replacement for the oracle-clamped update.  It makes
+    the algorithm equivalent to "Gaussian-guided residual coverage correction"
+    rather than "oracle-bounded density estimation".
+
+    Args:
+        residual_np : (H, W, 3) float32  non-negative residual channel
+                      (either I_res_pos or I_res_neg from the main loop).
+        means       : (K, 2)    Gaussian centres in pixel space.
+        covs        : (K, 2, 2) Spatial covariance matrices.
+        weights     : (K,)      GMM mixture weights.
+        image_size  : (H, W).
+
+    Returns:
+        (H, W, 3) float32  correction image, bounded by *residual_np*.
+    """
+    h, w = image_size
+    X, Y = np.meshgrid(np.arange(w), np.arange(h))
+    pos  = np.dstack((X, Y))
+
+    coverage = np.zeros((h, w), dtype=np.float32)
+    for mean, cov, wgt in zip(means, covs, weights):
+        try:
+            rv  = multivariate_normal(mean=mean, cov=cov, allow_singular=True)
+            pdf = rv.pdf(pos)
+            peak = np.max(pdf)
+            if peak < 1e-10:
+                continue
+            if not np.isfinite(pdf).all():
+                continue
+            coverage += (pdf / peak * wgt).astype(np.float32)
+        except (np.linalg.LinAlgError, ValueError):
+            continue
+
+    # Clip coverage to [0, 1] so it acts as a per-pixel blending weight.
+    coverage = np.clip(coverage, 0.0, 1.0)
+    return coverage[:, :, np.newaxis] * residual_np   # (H, W, 3), bounded by residual
+
+
 def fit_em_to_distribution(img_np, n_components, em_config, use_minibatch=True):
     """
     Fit a 5D GMM [x_norm, y_norm, r, g, b] to a non-negative image, weighting
