@@ -28,7 +28,7 @@ gaussian_splatting:
   enabled: true
   primary_samples: 256
   backup_samples: 0
-  num_epochs: 500
+  num_epochs: 200
   learning_rate: 0.01
   kernel_size: 33
   lambda_dssim: 0.2

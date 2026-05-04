@@ -44,6 +44,8 @@ def generate_2D_gaussian_splatting(kernel_size, scale, rotation, coords, colours
 
     # Covariance: R @ S @ S @ R^T
     covariance = R @ S @ S @ R.transpose(-1, -2)
+    eps = 1e-6
+    covariance = covariance + torch.eye(2, dtype=covariance.dtype, device=device).view(1, 2, 2) * eps
     inv_covariance = torch.inverse(covariance)
 
     # Create kernel
@@ -191,7 +193,7 @@ def train_2d_gaussian_splatting(img_np, config, output_dir, image_name):
         output = W[persistent_mask]
         batch_size = output.shape[0]
         
-        scale = torch.sigmoid(output[:, 0:2])
+        scale = torch.clamp(torch.sigmoid(output[:, 0:2]), min=1e-3)
         rotation = np.pi / 2 * torch.tanh(output[:, 2])
         alpha = torch.sigmoid(output[:, 3])
         colours = torch.sigmoid(output[:, 4:7])

@@ -357,3 +357,5 @@ Measure-Command { .\.venv\Scripts\python.exe run_gaussian_splatting_2d.py --conf
 
 # K=1024  (~slowest)
 Measure-Command { .\.venv\Scripts\python.exe run_gaussian_splatting_2d.py --config config_gs_1024.yml } | Select-Object TotalMinutes
+
+./.venv/Scripts/python.exe run_gaussian_splatting_2d.py --config config_gs_128.yml
