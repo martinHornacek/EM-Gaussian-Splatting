@@ -64,10 +64,6 @@ fig, ax = plt.subplots(figsize=(3.5, 2.4))
 ax.plot(em_k, em_psnr, "o-", color=EM_COLOR,    lw=1.4, ms=5, label="EM (one-shot)")
 ax.plot(ti_k, ti_psnr, "s--", color=TILED_COLOR, lw=1.4, ms=5, label="Tiled EM")
 
-# annotate the K=256 tiled anomaly
-ax.annotate("dip: residual\nfails at $K_{\\mathrm{tile}}\\!=\\!16$", xy=(256, ti_psnr[ti_k.index(256)]),
-            xytext=(300, 16.2), fontsize=6.5, color=TILED_COLOR,
-            arrowprops=dict(arrowstyle="->", color=TILED_COLOR, lw=0.8))
 
 ax.set_xscale("log", base=2)
 ax.set_xticks(sorted(set(em_k) | set(ti_k)))

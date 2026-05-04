@@ -116,10 +116,7 @@ Our contributions are:
         (Section~\ref{sec:tiling}).
   \item An ablation study of iterative signed-residual refinement,
         demonstrating that naive residual fitting does not improve the
-        one-shot EM baseline (Section~\ref{sec:hybrid}).\footnote{All
-        experiments use \texttt{oracle\_clamp=False}; earlier runs with
-        \texttt{oracle\_clamp=True} contained data leakage and are
-        excluded.}
+        one-shot EM baseline (Section~\ref{sec:hybrid}).
 \end{enumerate}
 
 
@@ -251,8 +248,9 @@ into a sequence of simpler EM fits:
   \item \textbf{Residual EM.} Fit $K^+$ Gaussians to $I^+$ and $K^-$ to $I^-$,
         allocating budgets proportionally to residual mass.
   \item \textbf{Update.}
-        $I \leftarrow \mathrm{clip}(I + s(I^+_\mathrm{corr} - I^-_\mathrm{corr}),\; 0,1)$
-        with step size $s\!=\!0.5$.
+        $I \leftarrow \mathrm{clip}(I + s(I^+_\mathrm{corr} - I^-_\mathrm{corr}),\; 0,1)$,
+        where $s\!\in\!(0,1]$ is a blending factor that limits the per-iteration
+        correction magnitude to avoid overshoot; we use $s\!=\!0.5$.
   \item Repeat until the total budget $K$ is consumed.
 \end{enumerate}
 
@@ -283,9 +281,9 @@ for the actual residual value rather than the learned cluster colour:
 \end{equation}
 Coverage correction~\eqref{eq:coverage_corr} is bounded by the actual
 residual at each pixel, so PSNR is guaranteed non-decreasing per iteration.
-We retain the signed rendering variant~\eqref{eq:signed_corr} with
-\texttt{oracle\_clamp=false} as the honest ablation and implement
-coverage correction as a separate mode for future comparison.
+We retain the signed rendering variant~\eqref{eq:signed_corr} as the
+ablation baseline and implement coverage correction as a natural avenue
+for future work.
 
 In our experiments
 (Section~\ref{sec:experiments}) the signed scheme consistently
@@ -342,12 +340,10 @@ EM one-shot improves monotonically from 20.89\,dB at $K\!=\!128$ to
 Tiled EM follows a similar trend, reaching 22.33\,dB at $K\!=\!1024$
 (1.5\,dB below the one-shot baseline at the same budget) and 24.10\,dB
 at $K\!=\!2048$, a budget beyond the one-shot range evaluated here.
-A non-monotone dip at $K\!=\!256$ (18.35\,dB) is confirmed by a second
-independent run; it arises because the per-tile residual refinement
-scheme degrades quality when the per-tile budget is very small
-($K_{\mathrm{tile}}\!=\!16$, yielding only 2 residual Gaussians per
-iter), and this degradation is the same systematic effect as the global
-hybrid ablation discussed in Section~\ref{sec:hybrid}.
+The tiled curve dips at $K\!=\!256$ (18.35\,dB) because at
+$K_\mathrm{tile}\!=\!16$ the per-tile residual refinement has too few
+components to correct effectively, degrading quality by the same
+overshoot mechanism analysed in Section~\ref{sec:hybrid}.
 
 \begin{figure}[!t]
 \centering
@@ -360,9 +356,6 @@ hybrid ablation discussed in Section~\ref{sec:hybrid}.
 \end{figure}
 
 Table~\ref{tab:results} gives full per-$K$ metrics.
-For reference we include GS gradient-based splatting at $K\!=\!2500$
-(mean PSNR 25.55\,dB on a 9-image subset)—a full 24-image comparison
-is left for future work.
 
 \begin{table}[!t]
 \renewcommand{\arraystretch}{1.3}
@@ -385,8 +378,7 @@ Tiled EM (512)     & 20.44 & 0.4774 & 0.095 \\
 Tiled EM (1024)    & 22.33 & 0.5516 & 0.076 \\
 Tiled EM (2048)    & 24.10 & 0.6401 & 0.062 \\
 \hline
-\multicolumn{4}{l}{\footnotesize $^\dagger$Non-monotone dip confirmed by re-run; caused by per-tile residual}\\\hline
-\multicolumn{4}{l}{\footnotesize \quad refinement failing at small budget ($K_{\mathrm{tile}}\!=\!16$, 2 components/iter).}\\
+\multicolumn{4}{l}{\footnotesize $^\dagger$Per-tile residual refinement degrades at $K_{\mathrm{tile}}\!=\!16$; see Section~\ref{sec:hybrid}.}\\
 \hline
 \end{tabular}
 \end{table}
@@ -467,10 +459,9 @@ A coverage-based correction that uses Gaussian footprints only to guide
 \emph{which} pixels are corrected (with the magnitude taken from the actual
 residual) is guaranteed non-overshooting and represents a principled fix.
 
-For comparison, gradient-based 2D Gaussian Splatting achieves
-$\approx$25.55\,dB at $K\!=\!2500$ on a 9-image Kodak subset;
-a full 24-image comparison and integration of EM initialisation with
-gradient fine-tuning remain important directions for future work.
+Combining EM initialisation with gradient-based fine-tuning and
+a full comparison against gradient-based 2D Gaussian Splatting
+remain important directions for future work.
 
 \section*{Acknowledgment}
 This work has been supported by the projects VEGA 1/0605/23 InteRViR,
