@@ -345,3 +345,15 @@ Analysis after both runs complete
     --out       results/hybrid_kodak_eval
 ```
 The script prints a formatted aggregate table (mean ± std across all 24 images) with literature reference numbers for context, saves per-image bar charts, and a violin plot of the metric distributions. The literature table in analyze_hybrid_kodak.py includes JPEG/JPEG2000/BPG, neural compression baselines (Ballé 2018, Minnen 2018, Cheng 2020), and 3D-GS for orientation — with a note that direct comparison requires matched bpp and resolution.
+
+# K=128  (~fastest, ~15–30 min on CPU)
+Measure-Command { .\.venv\Scripts\python.exe run_gaussian_splatting_2d.py --config config_gs_128.yml } | Select-Object TotalMinutes
+
+# K=256
+Measure-Command { .\.venv\Scripts\python.exe run_gaussian_splatting_2d.py --config config_gs_256.yml } | Select-Object TotalMinutes
+
+# K=512
+Measure-Command { .\.venv\Scripts\python.exe run_gaussian_splatting_2d.py --config config_gs_512.yml } | Select-Object TotalMinutes
+
+# K=1024  (~slowest)
+Measure-Command { .\.venv\Scripts\python.exe run_gaussian_splatting_2d.py --config config_gs_1024.yml } | Select-Object TotalMinutes
