@@ -1,0 +1,48 @@
+dataset:
+  image_list:
+  - 15
+  image_size:
+  - 256
+  - 256
+  path: ./kodak
+  random_count: 5
+  selection_mode: full
+device: cpu
+em:
+  covariance_type: full
+  enabled: true
+  max_iter: 200
+  minibatch:
+    min_samples: 5000
+    subsample_ratio: 0.15
+experiment:
+  output_dir: ./results/tiled_fullbatch_1024
+  save_plots: false
+  save_raw_data: false
+  save_renders: true
+gaussian_splatting:
+  enabled: false
+  lambda_dssim: 0.2
+metrics:
+  compute_lpips: false
+tiled_em:
+  enabled: true
+  gd:
+    border_px: 3
+    boundary_weight: 3.0
+    enabled: false
+    lambda_dssim: 0.2
+    log_interval: 0
+    lr_colors: 0.005
+    lr_means: 0.5
+    lr_scales: 0.002
+    n_steps: 150
+  max_iter: 14
+  n_init_fraction: 0.25
+  n_per_iter_per_tile: null
+  n_total: 1024
+  n_workers: 4
+  residual_threshold: 0.001
+  step_size: 0.5
+  tile_h: 64
+  tile_w: 64

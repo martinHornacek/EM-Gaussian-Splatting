@@ -66,8 +66,10 @@ from utils.metrics_utils import evaluate_metrics
 from utils.dataset_utils import select_images
 from utils.em_utils import (
     load_config, download_kodak_dataset, _prepare_data,
-    render_gaussians, render_gaussians_signed, fit_em_to_distribution,
+    render_gaussians, render_gaussians_signed, render_residual_correction,
+    fit_em_to_distribution,
 )
+from utils.gd_utils import gradient_descent_refinement, _TORCH_AVAILABLE as _GD_TORCH_AVAILABLE
 from utils.hybrid_vis_utils import (
     save_render_frame,
     save_diag_residuals,
@@ -189,6 +191,12 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
     # pixel-wise by the exact residual (gt_np) — DATA LEAKAGE, inflates metrics.
     # Default False: uses render_gaussians_signed with learned residual colours.
     oracle_clamp    = bool(hr_cfg.get('oracle_clamp', False))
+    # correction_mode: controls how the residual correction is rendered.
+    #   "signed"   (default) — render_gaussians_signed: uses learned cluster colours;
+    #                           can overshoot, accumulates bias over iterations.
+    #   "coverage"           — render_residual_correction: Gaussian coverage × actual
+    #                           residual; guaranteed non-overshooting, PSNR non-decreasing.
+    correction_mode = hr_cfg.get('correction_mode', 'signed')
     em_variant      = hr_cfg.get('em_variant', 'minibatch')
     compare_pure_em = hr_cfg.get('compare_pure_em', True)
     use_minibatch   = hr_cfg.get('use_minibatch', True)
@@ -201,6 +209,9 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
     vis_fps        = vis_cfg.get('fps', 2)
     vis_make_mp4   = vis_cfg.get('make_mp4', True)
     vis_make_gif   = vis_cfg.get('make_gif', False)
+
+    gd_cfg     = hr_cfg.get('gd', {})
+    gd_enabled = bool(gd_cfg.get('enabled', False)) and _GD_TORCH_AVAILABLE
     # vis_n_std was consumed by the old ellipse-overlay diagnostic; kept in
     # config for forward-compatibility but is not used by current vis code.
 
@@ -231,8 +242,11 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
         print("  The correction is clamped to the exact residual each iteration.")
         print("  PSNR will be monotonically non-decreasing (oracle signature).")
         print("  Set oracle_clamp: false for honest evaluation (recommended).")
+    elif correction_mode == 'coverage':
+        print("  correction_mode=coverage  correction = Gaussian-coverage × actual residual")
+        print("  Guaranteed non-overshooting; PSNR is non-decreasing each iteration.")
     else:
-        print("  oracle_clamp=false  correction = render_gaussians_signed (pure Gaussian, no gt mixing)")
+        print("  correction_mode=signed  correction = render_gaussians_signed (pure Gaussian colors)")
     print("=" * 70)
 
     timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -407,8 +421,12 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
                     # via their spatial Gaussian profiles.  No ground truth used.
                     # correction[p] = sum_k( pdf_k(p)/max(pdf_k) * learned_color_k )
                     # Oracle mode (deprecated): render_gaussians + oracle clamp.
+                    # Coverage mode: Gaussian footprint × actual residual value.
                     if oracle_clamp:
                         I_pos_corr = render_gaussians(m, c, col, wt, isize)
+                    elif correction_mode == 'coverage':
+                        I_pos_corr = render_residual_correction(
+                            I_res_pos, m, c, wt, isize)
                     else:
                         I_pos_corr = render_gaussians_signed(
                             m, c, col, np.ones(len(m), dtype=np.float32), isize)
@@ -437,6 +455,9 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
                     n_added_neg    = len(m)   # may be < n_neg when data is sparse
                     if oracle_clamp:
                         I_neg_corr = render_gaussians(m, c, col, wt, isize)
+                    elif correction_mode == 'coverage':
+                        I_neg_corr = render_residual_correction(
+                            I_res_neg, m, c, wt, isize)
                     else:
                         I_neg_corr = render_gaussians_signed(
                             m, c, col, np.ones(len(m), dtype=np.float32), isize)
@@ -453,20 +474,17 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
                         cum_gid += 1
 
             # ---- Apply correction ------------------------------------------ #
-            # I_pos_corr and I_neg_corr are rendered from EM-learned Gaussian
-            # colours — no ground truth is used.  The net correction is:
-            #   delta[p] = step * (I_pos_corr[p] - I_neg_corr[p])
-            # This can overshoot when the learned cluster colour exceeds the
-            # actual local residual.  step_size <= 0.5 limits overshoot;
-            # any residual overshoot flips sign and is corrected next iteration.
-            # oracle_clamp=True restores the old data-leakage behaviour.
+            # I_pos_corr and I_neg_corr differ by correction_mode:
+            #   "signed"   — rendered from learned cluster colours; can overshoot.
+            #   "coverage" — coverage × actual residual; bounded by residual.
+            #   oracle_clamp — DEPRECATED data-leakage mode.
             raw_delta = step_size * (I_pos_corr - I_neg_corr)
 
             if oracle_clamp:
                 # DEPRECATED: data-leakage mode kept for backward compatibility
                 I_delta = np.clip(raw_delta, -I_res_neg, I_res_pos)
             else:
-                I_delta = raw_delta   # honest: no oracle bound
+                I_delta = raw_delta   # honest: no oracle bound for both modes
 
             # Track pixels where the Gaussian correction overshoots the actual
             # residual — a measure of how well the GMM approximates the residual.
@@ -528,6 +546,40 @@ def run_hybrid_residual_refinement(config_path='config.yml'):
         # ------------------------------------------------------------------ #
         # Final evaluation & output                                           #
         # ------------------------------------------------------------------ #
+        # ------------------------------------------------------------------ #
+        # Optional GD refinement — fine-tune EM Gaussians with Adam         #
+        # ------------------------------------------------------------------ #
+        # The EM hybrid render (I_current) is used as the step-0 anchor via #
+        # the frozen gap bridge, so quality can only improve from here.      #
+        # eff_amps = amplitude_sign / n_total — the gap corrects any scale  #
+        # mismatch between this normalisation and the EM composite.         #
+        # bboxes = full image as a single "tile" → uniform pixel weights.   #
+        # ------------------------------------------------------------------ #
+        if gd_enabled:
+            print(f"  GD refinement (EM -> GD fine-tune) …")
+            try:
+                eff_amps_gd = (np.array(all_amplitudes, dtype=np.float32)
+                               / max(n_gaussians_total, 1))
+                (I_current,
+                 all_means, all_covs,
+                 all_colors, _) = gradient_descent_refinement(
+                    np.array(all_means, dtype=np.float32),
+                    np.array(all_covs,  dtype=np.float32),
+                    np.array(all_colors, dtype=np.float32),
+                    eff_amps_gd,
+                    gt_np,
+                    I_current,            # composite_np = EM hybrid render
+                    bboxes=[(0, 0, h, w)],  # full image, no tile seams
+                    gd_cfg=gd_cfg,
+                )
+                all_means  = list(all_means)
+                all_covs   = list(all_covs)
+                all_colors = list(all_colors)
+            except Exception as exc:
+                print(f"  WARNING: GD refinement failed: {exc}")
+        elif not _GD_TORCH_AVAILABLE and gd_cfg.get('enabled', False):
+            print("  WARNING: torch not available — GD refinement skipped.")
+
         total_time    = time.time() - t_total
         final_metrics = evaluate_metrics(
             I_current, gt_np, n_components=n_gaussians_total,

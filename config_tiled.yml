@@ -1,0 +1,127 @@
+# config_tiled.yml — Tile-based EM Gaussian Splatting
+# =====================================================
+# Runs the hybrid full-batch EM + residual refinement strategy *per tile*
+# rather than on the whole image at once.
+#
+# KEY DIFFERENCES from config.yml:
+#   - Adds a [tiled_em] section (controls tiling and GD refinement).
+#   - minibatch is NOT used anywhere in this experiment:
+#       * em_variant: "standard"  (initial tile EM uses all tile pixels)
+#       * use_minibatch: false     (residual EM uses all tile pixels)
+#   - GD refinement is a POST-PROCESSING step on the merged result.
+
+# ---------------------------------------------------------------------------
+# Dataset
+# ---------------------------------------------------------------------------
+dataset:
+  path: "./kodak"
+  # Use 256×256 for fast experimentation; set to null for native Kodak resolution.
+  image_size: [256, 256]
+
+  # Image selection: "full", "random", or "list"
+  selection_mode: "list"
+  random_count: 5
+  image_list: [15]        # kodim15.png — a representative natural image
+
+# ---------------------------------------------------------------------------
+# Experiment I/O
+# ---------------------------------------------------------------------------
+experiment:
+  output_dir: ./outputs
+  save_plots:    true
+  save_renders:  true
+  save_raw_data: true
+
+# ---------------------------------------------------------------------------
+# EM configuration  (shared between initial tile EM and residual fits)
+# ---------------------------------------------------------------------------
+em:
+  enabled: true
+  covariance_type: full     # 'full', 'diag', 'spherical', 'tied'
+  max_iter: 200             # EM iterations per fit (reduced for tiles — smaller data)
+  # mini-batch settings — NOT used when use_minibatch: false in tiled_em
+  minibatch:
+    subsample_ratio: 0.15
+    min_samples: 5000
+
+# ---------------------------------------------------------------------------
+# 2D Gaussian Splatting — kept for completeness (not run by run_tiled_em.py)
+# ---------------------------------------------------------------------------
+gaussian_splatting:
+  enabled: false
+  lambda_dssim: 0.2
+
+# ---------------------------------------------------------------------------
+# Tiled EM  (read by run_tiled_em.py)
+# ---------------------------------------------------------------------------
+tiled_em:
+  enabled: true
+
+  # ---- Tile geometry -------------------------------------------------------
+  # Tiles fully cover the image; border tiles are clipped to image boundaries.
+  tile_h: 64            # tile height in pixels
+  tile_w: 64            # tile width in pixels
+
+  # ---- Gaussian budget -----------------------------------------------------
+  # n_total Gaussians are allocated proportionally across tiles.
+  # Each tile receives floor(n_total / n_tiles) Gaussians; the remainder goes
+  # to the first few tiles.
+  n_total: 1024         # total Gaussian budget across ALL tiles
+
+  # Fraction of each tile's budget used for the INITIAL EM fit.
+  # Remainder is spent on iterative residual refinement.
+  # Example: tile with K=64  → n_init = round(64 * 0.25) = 16 initial Gaussians
+  #                           → 48 remaining for up to max_iter residual steps
+  n_init_fraction: 0.25
+
+  # Gaussians added per residual iteration per tile.
+  # null → auto: max(1, k_tile // 8)
+  n_per_iter_per_tile: null
+
+  # ---- Stopping criteria ---------------------------------------------------
+  max_iter: 14
+  residual_threshold: 0.001
+  step_size: 0.5
+
+  # ---- Parallelism ---------------------------------------------------------
+  # n_workers > 1 uses ProcessPoolExecutor (spawn context, Windows-safe).
+  # Set to 0 or 1 for sequential (easier to debug / profile).
+  n_workers: 4
+
+  # ---- Gradient-descent refimement ----------------------------------------
+  gd:
+    enabled: true
+
+    # Number of Adam optimisation steps on the full merged Gaussian set.
+    n_steps: 150
+
+    # Per-parameter learning rates:
+    #   means_px  — larger step to allow seam-crossing movement
+    #   l_diag / l_off — Cholesky factor (covariance shape/orientation)
+    #   logit_colors — small because colors are already near-correct from EM
+    lr_means:  0.5
+    lr_colors: 0.005
+    lr_scales: 0.002
+
+    # Loss weighting
+    lambda_dssim: 0.2      # (1-λ)·L1 + λ·dSSIM
+
+    # Boundary pixel emphasis: pixels within border_px of a tile edge are
+    # given boundary_weight× higher loss weight so the optimiser preferentially
+    # smooths block artefacts before correcting interior pixels.
+    boundary_weight: 3.0
+    border_px: 3
+
+    # Console verbosity: print loss every log_interval steps (0 = silent).
+    log_interval: 25
+
+# ---------------------------------------------------------------------------
+# Metrics
+# ---------------------------------------------------------------------------
+metrics:
+  compute_lpips: false     # set to true if lpips is installed
+
+# ---------------------------------------------------------------------------
+# Device
+# ---------------------------------------------------------------------------
+device: "cpu"

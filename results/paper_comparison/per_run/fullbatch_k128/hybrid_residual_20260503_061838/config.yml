@@ -1,0 +1,47 @@
+dataset:
+  image_list:
+  - 15
+  image_size:
+  - 256
+  - 256
+  path: ./kodak
+  random_count: 5
+  selection_mode: full
+device: cpu
+em:
+  covariance_type: full
+  enabled: true
+  max_iter: 100
+  minibatch:
+    min_samples: 5000
+    subsample_ratio: 0.15
+experiment:
+  output_dir: results\paper_comparison\per_run\fullbatch_k128
+  run_diagnostics: false
+  save_plots: false
+  save_raw_data: false
+  save_renders: true
+gaussian_splatting:
+  enabled: false
+  lambda_dssim: 0.2
+hybrid_residual:
+  compare_pure_em: true
+  em_variant: standard
+  enabled: true
+  gd:
+    enabled: false
+  max_iter: 14
+  n_init: 16
+  n_per_iter: 8
+  n_total: 128
+  oracle_clamp: false
+  residual_threshold: 0.0001
+  step_size: 0.5
+  use_minibatch: false
+  visualize:
+    enabled: false
+    fps: 2
+    make_gif: false
+    make_mp4: false
+metrics:
+  compute_lpips: false

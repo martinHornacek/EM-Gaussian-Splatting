@@ -82,6 +82,16 @@ hybrid_residual:
   # Default is false for honest evaluation.
   oracle_clamp: false
 
+  # correction_mode: controls how the residual correction image is built.
+  #   "signed"   (default) — render_gaussians_signed: correction[p] = sum_k(alpha_k*c_k)
+  #              Uses the learned cluster colour as the correction magnitude.
+  #              Can overshoot; step_size <= 0.5 limits but does not eliminate overshoot.
+  #   "coverage"           — render_residual_correction: correction[p] = coverage(p)*residual[p]
+  #              Gaussian footprints guide WHICH pixels are corrected; the actual
+  #              residual value guides HOW MUCH.  Correction is automatically bounded
+  #              by the residual → PSNR is guaranteed non-decreasing each iteration.
+  correction_mode: "signed"
+
   # Correction damping: scale applied to (I_pos_corr - I_neg_corr) each step.
   # With render_gaussians_signed the correction at a pixel is the Gaussian's
   # learned mean colour (not the actual residual), which can overshoot pixels
@@ -100,6 +110,21 @@ hybrid_residual:
 
   # Run pure EM with n_total Gaussians as a quality baseline for comparison
   compare_pure_em: true
+
+  # Gradient-descent refinement — fine-tune EM Gaussians with Adam after the
+  # residual loop finishes.  Uses the EM hybrid render as the step-0 anchor
+  # (frozen gap bridge), so quality can only improve from the EM result.
+  # Set enabled: true to activate; requires PyTorch (pip install torch).
+  gd:
+    enabled: false           # off by default (adds significant runtime)
+    n_steps: 200
+    lr_means: 0.5            # learning rate for Gaussian centres (pixels)
+    lr_colors: 0.005         # learning rate for colours
+    lr_scales: 0.002         # learning rate for log-scale / Cholesky params
+    lambda_dssim: 0.2        # dSSIM weight in loss (same as GS config)
+    boundary_weight: 1.0     # full-image: no tile seams, uniform loss weight
+    border_px: 0             # no border region to highlight
+    log_interval: 50         # print every N steps (0 = silent)
 
   # Visualization — per-iteration frames and animated videos
   visualize:

@@ -1,0 +1,52 @@
+# config_tiled_256.yml — Tiled EM full-batch, 256 Gaussians, full Kodak
+dataset:
+  path: "./kodak"
+  image_size: [256, 256]
+  selection_mode: "full"
+  random_count: 5
+  image_list: [15]
+
+experiment:
+  output_dir: ./results/tiled_fullbatch_256
+  save_plots:    false
+  save_renders:  true
+  save_raw_data: false
+
+em:
+  enabled: true
+  covariance_type: full
+  max_iter: 200
+  minibatch:
+    subsample_ratio: 0.15
+    min_samples: 5000
+
+gaussian_splatting:
+  enabled: false
+  lambda_dssim: 0.2
+
+tiled_em:
+  enabled: true
+  tile_h: 64
+  tile_w: 64
+  n_total: 256
+  n_init_fraction: 0.25
+  n_per_iter_per_tile: null
+  max_iter: 14
+  residual_threshold: 0.001
+  step_size: 0.5
+  n_workers: 4
+  gd:
+    enabled: false
+    n_steps: 150
+    lr_means:  0.5
+    lr_colors: 0.005
+    lr_scales: 0.002
+    lambda_dssim: 0.2
+    boundary_weight: 3.0
+    border_px: 3
+    log_interval: 0
+
+metrics:
+  compute_lpips: false
+
+device: "cpu"
