@@ -64,9 +64,9 @@ hybrid_residual:
   # Gaussian budget
   # bpp = K × 9 × 32 / (768 × 512) = K × 288 / 393,216
   # K=2048 → 1.50 bpp
-  n_total: 2048
-  n_init: 256              # n_total / 8
-  n_per_iter: 128          # (2048 - 256) / 14 = 128
+  n_total: 512
+  n_init: 64              # n_total / 8
+  n_per_iter: 32          # (512 - 64) / 14 = 32
   max_iter: 14
 
   residual_threshold: 0.0001
