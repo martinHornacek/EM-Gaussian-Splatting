@@ -25,14 +25,14 @@ gaussian_splatting:
   enabled: true
   primary_samples: 32
   backup_samples: 96
-  num_epochs: 1000
+  num_epochs: 500
   learning_rate: 0.01
   kernel_size: 33
   lambda_dssim: 0.2
   densification: true
   densification_interval: 10
-  gradient_threshold: 0.01
-  gaussian_threshold: 1.2
+  gradient_threshold: 0.001
+  gaussian_threshold: 0.7
   pruning: true
 
 hybrid_residual:

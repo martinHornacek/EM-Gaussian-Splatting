@@ -1,0 +1,36 @@
+dataset:
+  image_size:
+  - 256
+  - 256
+  path: ./kodak
+  selection_mode: full
+em:
+  covariance_type: full
+  enabled: false
+  max_iter: 500
+  n_components: 512
+experiment:
+  diagnostic_n_std: 2.0
+  output_dir: ./results/gs_fullkodak_k512
+  plot_interval: 100
+  run_diagnostics: false
+  save_plots: false
+  save_raw_data: true
+  save_renders: true
+gaussian_splatting:
+  backup_samples: 384
+  densification: true
+  densification_interval: 10
+  enabled: true
+  gaussian_threshold: 0.7
+  gradient_threshold: 0.001
+  kernel_size: 33
+  lambda_dssim: 0.2
+  learning_rate: 0.01
+  num_epochs: 500
+  primary_samples: 128
+  pruning: true
+hybrid_residual:
+  enabled: false
+metrics:
+  compute_lpips: false
