@@ -1,0 +1,40 @@
+dataset:
+  image_list:
+  - 21
+  image_size:
+  - 256
+  - 256
+  path: ./kodak
+  selection_mode: list
+em:
+  covariance_type: full
+  enabled: true
+  max_iter: 500
+  minibatch:
+    min_samples: 5000
+    subsample_ratio: 0.15
+  n_components: 2048
+experiment:
+  output_dir: ./results/hybrid_fullkodak_k2048
+  plot_interval: 50
+  run_diagnostics: false
+  save_plots: false
+  save_raw_data: false
+  save_renders: true
+gaussian_splatting:
+  enabled: false
+hybrid_residual:
+  compare_pure_em: false
+  em_variant: standard
+  enabled: true
+  max_iter: 14
+  n_init: 256
+  n_per_iter: 128
+  n_total: 2048
+  residual_threshold: 0.0001
+  step_size: 0.5
+  use_minibatch: false
+  visualize:
+    enabled: false
+metrics:
+  compute_lpips: false

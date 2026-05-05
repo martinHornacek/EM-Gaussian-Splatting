@@ -1,10 +1,10 @@
-# GS baseline — K=128 Gaussians, full Kodak 24 images
-# Fixed budget (no densification/pruning) for fair comparison with EM one-shot K=128
-
+# GS baseline -- K=128 Gaussians, full Kodak 24 images
+# Densification+pruning enabled: starts at 32 Gaussians, grows up to 128 total.
+# primary_samples=32, backup_samples=96 => max capacity = 128 Gaussians.
 dataset:
-  path: "./kodak"
+  path: ./kodak
   image_size: [256, 256]
-  selection_mode: "full"
+  selection_mode: full
 
 experiment:
   output_dir: ./results/gs_fullkodak_k128
@@ -20,33 +20,23 @@ em:
   n_components: 128
   covariance_type: full
   max_iter: 500
-  minibatch:
-    subsample_ratio: 0.15
-    min_samples: 5000
 
 gaussian_splatting:
   enabled: true
-  primary_samples: 128
-  backup_samples: 0
-  num_epochs: 500
+  primary_samples: 32
+  backup_samples: 96
+  num_epochs: 1000
   learning_rate: 0.01
   kernel_size: 33
   lambda_dssim: 0.2
-  densification: false
+  densification: true
   densification_interval: 10
   gradient_threshold: 0.01
   gaussian_threshold: 1.2
-  pruning: false
+  pruning: true
 
 hybrid_residual:
   enabled: false
-  n_total: 128
-  n_init: 64
-  n_per_iter: 32
-  max_iter: 14
-  residual_threshold: 0.0001
-  oracle_clamp: false
-  correction_mode: "signed"
 
 metrics:
   compute_lpips: false

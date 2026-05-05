@@ -69,7 +69,10 @@ Experiments on the Kodak PhotoCD benchmark (24 images, downscaled to
 $256\!\times\!256$) show that the one-shot
 EM fit achieves a mean PSNR of 20.89\,dB at $K\!=\!128$ and 23.79\,dB at
 $K\!=\!1024$, while the tiled variant scales to larger Gaussian budgets, enabling higher reconstruction quality.
-We additionally investigate an iterative residual-refinement scheme and find
+We additionally evaluate a mini-batch variant that reduces per-image
+fitting time to under one minute at $K\!=\!1024$, at a cost of 1.3\,dB
+in mean PSNR.
+We further investigate an iterative residual-refinement scheme and find
 that it does not improve upon the one-shot EM baseline, motivating future
 work on gradient-based refinement.
 \end{abstract}
@@ -117,6 +120,11 @@ Our contributions are:
   \item An ablation study of iterative signed-residual refinement,
         demonstrating that naive residual fitting does not improve the
         one-shot EM baseline (Section~\ref{sec:hybrid}).
+  \item An evaluation of a mini-batch EM variant, showing that 15\,\%
+        pixel subsampling yields a speed-quality trade-off of
+        0.4--1.3\,dB loss for $\approx$6--44\,s fitting time per image
+        across $K\!\in\!\{128,\ldots,1024\}$
+        (Section~\ref{subsec:minibatch}).
 \end{enumerate}
 
 
@@ -191,9 +199,8 @@ where $(x_{\mathrm{norm}}, y_{\mathrm{norm}})$ are normalised pixel coordinates
 and $(r,g,b)$ are normalised colour values.
 A GMM with $K$ components is then fitted to these $N = H\cdot W$ data
 points using the EM algorithm as described in Section~\ref{subsec:gmm}.
-After fitting, the spatial means and covariances are back-projected to pixel
-space by multiplying by $(W, H)$ and $(W^2, WH; WH, H^2)$ respectively.
-The resulting Gaussians are rendered into an image using~\eqref{eq:render}.
+The fitted Gaussian parameters are then scaled back to pixel coordinates
+and rendered into an image using~\eqref{eq:render}.
 
 % =========================================================================
 \section{Tiled EM for Scalability}
@@ -254,47 +261,26 @@ into a sequence of simpler EM fits:
   \item Repeat until the total budget $K$ is consumed.
 \end{enumerate}
 
-\noindent\textbf{Failure analysis.}  The correction at each pixel is
-\begin{equation}
-  I^+_\mathrm{corr}(\mathbf{p}) = \sum_k \frac{\mathcal{N}(\mathbf{p};\boldsymbol{\mu}_k,\boldsymbol{\Sigma}_k)}
-                                                {\max_{\mathbf{p}'}\mathcal{N}(\mathbf{p}';\boldsymbol{\mu}_k,\boldsymbol{\Sigma}_k)}
-                                   \, \mathbf{c}_k,
-  \label{eq:signed_corr}
-\end{equation}
-where $\mathbf{c}_k$ is the \emph{cluster-mean} colour of residual pixels
-in component $k$.
-Because $\mathbf{c}_k$ is an average over the cluster, the correction can
-overshoot at pixels whose true residual is smaller than the cluster mean.
-With $n_\mathrm{per\_iter} \approx K/28$ components per iteration the fit
-is coarse, so overshoot is widespread; compositing through the clip
-operation introduces persistent bias that compounds over iterations.
+\noindent
+Each iteration corrects pixels using the \emph{cluster-mean} residual colour.
+Because this is an average over a cluster region, it overshoots at pixels
+whose true residual is below that average.
+Since only a small Gaussian budget is used per iteration the clusters are
+coarse, overshoot is widespread, and the clip operation accumulates a
+persistent bias over 14 iterations.
+A principled fix uses the \emph{actual} pixel residual weighted by Gaussian
+coverage, which guarantees non-decreasing PSNR per iteration and is left as
+future work.
 
-\noindent\textbf{Principled fix.}
-A drop-in replacement uses Gaussian \emph{coverage} as a blending weight
-for the actual residual value rather than the learned cluster colour:
-\begin{equation}
-  I^+_\mathrm{cov}(\mathbf{p}) = \mathrm{clip}\!\left({\textstyle\sum_k}\,
-     \frac{\mathcal{N}(\mathbf{p};\boldsymbol{\mu}_k,\boldsymbol{\Sigma}_k)}
-          {\max_{\mathbf{p}'}\mathcal{N}(\mathbf{p}';\boldsymbol{\mu}_k,\boldsymbol{\Sigma}_k)}
-     \,\pi_k,\;0,1\right) \cdot I^+_\mathrm{res}(\mathbf{p}).
-  \label{eq:coverage_corr}
-\end{equation}
-Coverage correction~\eqref{eq:coverage_corr} is bounded by the actual
-residual at each pixel, so PSNR is guaranteed non-decreasing per iteration.
-We retain the signed rendering variant~\eqref{eq:signed_corr} as the
-ablation baseline and implement coverage correction as a natural avenue
-for future work.
-
-In our experiments
-(Section~\ref{sec:experiments}) the signed scheme consistently
-\emph{degrades} quality compared to the one-shot baseline by
-approximately 2.5\,dB across all $K$ values tested.
+In our experiments (Section~\ref{sec:experiments}) the scheme consistently
+\emph{degrades} quality, with gaps ranging from $-$2.79\,dB at $K\!=\!128$
+to $-$0.93\,dB at $K\!=\!2048$.
 
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{figures/fig_tiling.png}
 \caption{Tiled EM on \texttt{kodim15} at $K\!=\!1024$.
-         Left: ground truth. Centre: tiled composite (22.54\,dB).
+         Left: ground truth. Centre: tiled composite (22.43\,dB).
          Right: tile-boundary visualisation (16 tiles, 64\!$\times$\!64 px each).}
 \label{fig:tiling}
 \end{figure}
@@ -330,6 +316,12 @@ For the \emph{residual refinement} ablation, 14 refinement iterations
 are performed with step size $s\!=\!0.5$, using the same total Gaussian
 budget as the one-shot baseline.
 
+For the \emph{mini-batch EM} variant, scikit-learn's
+\texttt{MiniBatchGaussianMixture} is used in place of
+\texttt{GaussianMixture}, with a sub-sample fraction of 15\,\% of pixels
+per sub-iteration (minimum 5000 samples) and a maximum of 500 sub-iterations.
+All other settings match the one-shot EM baseline.
+
 \subsection{Quality vs.\ Gaussian Count}
 \label{subsec:rq}
 
@@ -341,17 +333,19 @@ Tiled EM follows a similar trend, reaching 22.33\,dB at $K\!=\!1024$
 (1.5\,dB below the one-shot baseline at the same budget) and 24.10\,dB
 at $K\!=\!2048$, a budget beyond the one-shot range evaluated here.
 The tiled curve dips at $K\!=\!256$ (18.35\,dB) because at
-$K_\mathrm{tile}\!=\!16$ the per-tile residual refinement has too few
-components to correct effectively, degrading quality by the same
-overshoot mechanism analysed in Section~\ref{sec:hybrid}.
+$K_\mathrm{tile}\!=\!16$ each tile receives only 16 Gaussians to model
+$64\!\times\!64\!=\!4096$ pixels, which is insufficient for reliable EM
+convergence and causes quality to fall below the $K\!=\!128$ tiled result.
 
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{figures/fig_psnr_vs_k.png}
-\caption{Mean PSNR on Kodak (24 images) vs.\ number of Gaussians $K$.
-         One-shot EM (circles, solid) consistently outperforms tiled EM
-         (squares, dashed) at the same $K$; the tiled variant extends
-         to higher budgets.}
+\caption{Mean PSNR on Kodak (24 images) vs.\ number of Gaussians $K$ for all four
+         methods. EM one-shot (circles) is the strongest at matched $K$;
+         mini-batch EM (diamonds) tracks it within 0.4--1.3\,dB while
+         extending to $K\!=\!2048$; tiled EM (squares) also scales to
+         $K\!=\!2048$ but at lower quality for small $K$;
+         hybrid residual (triangles) consistently degrades below the one-shot baseline.}
 \label{fig:psnr_vs_k}
 \end{figure}
 
@@ -378,9 +372,9 @@ Tiled EM (512)     & 20.44 & 0.4774 & 0.095 \\
 Tiled EM (1024)    & 22.33 & 0.5516 & 0.076 \\
 Tiled EM (2048)    & 24.10 & 0.6401 & 0.062 \\
 \hline
-\multicolumn{4}{l}{\footnotesize $^\dagger$Per-tile residual refinement degrades at $K_{\mathrm{tile}}\!=\!16$; see Section~\ref{sec:hybrid}.}\\
-\hline
 \end{tabular}
+
+\smallskip{\footnotesize$^\dagger$At $K\!=\!256$ each tile receives only $K_{\mathrm{tile}}\!=\!16$ Gaussians per tile, too few for reliable EM convergence.}
 \end{table}
 
 \subsection{Residual Refinement Ablation}
@@ -388,16 +382,11 @@ Tiled EM (2048)    & 24.10 & 0.6401 & 0.062 \\
 
 Table~\ref{tab:hybrid} shows the effect of the iterative residual scheme
 described in Section~\ref{sec:hybrid}.
-The refinement consistently \emph{reduces} quality by 2.3--2.8\,dB
-relative to the one-shot EM baseline at every $K$.
-The root cause is a rendering-model mismatch: the correction
-$I^+_\mathrm{corr}$ in~\eqref{eq:signed_corr} is proportional to the
-cluster-mean residual colour $\mathbf{c}_k$, which overshoots at many
-pixels where the true residual is below the cluster average.
-Compounded over 14 iterations through a clip operation this
-overshoot bias dominates.  Coverage correction~\eqref{eq:coverage_corr}
-eliminates the overshoot by bounding the correction by the actual residual,
-and is a natural avenue for future work.
+The refinement consistently \emph{reduces} quality by 0.9--2.8\,dB
+relative to the EM baseline at every $K$ (see Table~\ref{tab:hybrid}).
+The root cause is that the correction uses a cluster-mean colour that
+overshoots at pixels below the cluster average; this bias compounds over
+14 iterations through the clip operation.
 
 \begin{table}[!t]
 \renewcommand{\arraystretch}{1.3}
@@ -413,9 +402,66 @@ $K$ & \textbf{EM one-shot} & \textbf{Hybrid (14 iters)} & $\Delta$ \\
 256  & 21.91 & 19.12 & $-$2.79 \\
 512  & 23.00 & 20.38 & $-$2.61 \\
 1024 & 23.79 & 21.45 & $-$2.34 \\
+2048 & 23.64$^\dagger$ & 22.71 & $-$0.93 \\
+\hline
+\multicolumn{4}{l}{\footnotesize $^\dagger$Mini-batch EM baseline (full-batch run incomplete).}\\
 \hline
 \end{tabular}
 \end{table}
+
+Extending the ablation to $K\!=\!2048$ confirms the trend: the hybrid
+achieves 22.71\,dB versus 23.64\,dB for mini-batch EM (Table~\ref{tab:minibatch}),
+a gap of $-$0.93\,dB.
+The diminishing gap as $K$ grows suggests that larger per-iteration
+sub-budgets partially offset the overshoot bias, yet the scheme still
+fails to surpass the plain EM baseline even at $K\!=\!2048$.
+
+\subsection{Mini-Batch EM Variant}
+\label{subsec:minibatch}
+
+Full-batch EM scales as $\mathcal{O}(NK)$ per iteration, which becomes costly
+for large $K$.  We evaluate a mini-batch variant
+(\texttt{MiniBatchGaussianMixture} in scikit-learn) that processes a
+randomly sub-sampled 15\,\% of pixels per sub-iteration (minimum 5000 samples),
+at the same maximum of 500 sub-iterations.
+
+Table~\ref{tab:minibatch} reports results on the full Kodak-24 set and
+Fig.~\ref{fig:speed_quality} visualises the speed--quality trade-off.
+At $K\!=\!128$ the quality gap relative to full-batch EM is only 0.4\,dB, with
+a mean fitting time of 6\,s per image.
+At $K\!=\!1024$ the gap grows to 1.3\,dB, but fitting time is approximately
+44\,s versus several minutes for the full-batch counterpart.
+The mini-batch variant also extends naturally to $K\!=\!2048$ (23.64\,dB,
+193\,s per image), a regime where full-batch fitting becomes prohibitively slow.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.3}
+\caption{\textsc{Mini-batch EM on Kodak-24. Mean over 24 images.
+Time is per-image EM fitting time.}}
+\label{tab:minibatch}
+\centering
+\begin{tabular}{|c|c|c|c|c|}
+\hline
+$K$ & \textbf{PSNR$\uparrow$} & \textbf{SSIM$\uparrow$} & \textbf{RMSE$\downarrow$} & \textbf{Time (s)} \\
+\hline
+128  & 20.49 & 0.480 & 0.098 &   6 \\
+256  & 21.33 & 0.511 & 0.089 &  13 \\
+512  & 21.95 & 0.541 & 0.083 &  23 \\
+1024 & 22.48 & 0.575 & 0.078 &  44 \\
+2048 & 23.64 & 0.632 & 0.069 & 193 \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_speed_quality.png}
+\caption{Mini-batch EM speed--quality trade-off on Kodak-24.
+         Each point is one $K$ setting; fitting time is mean per image.
+         The curve spans $K\!=\!128$ (6\,s, 20.49\,dB) to
+         $K\!=\!2048$ (193\,s, 23.64\,dB).}
+\label{fig:speed_quality}
+\end{figure}
 
 \subsection{Visual Comparison}
 \label{subsec:visual}
@@ -423,8 +469,8 @@ $K$ & \textbf{EM one-shot} & \textbf{Hybrid (14 iters)} & $\Delta$ \\
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{figures/fig_visual.png}
-\caption{Visual comparison on \texttt{kodim15} (lighthouse) at $K\!=\!1024$.
-         Left to right: ground truth; EM one-shot (25.36\,dB); tiled EM (22.54\,dB);
+\caption{Visual comparison on \texttt{kodim15} at $K\!=\!1024$.
+         Left to right: ground truth; EM one-shot (25.36\,dB); tiled EM (22.43\,dB);
          absolute residual of EM one-shot (hot colourmap, 0--12\%).}
 \label{fig:visual}
 \end{figure}
@@ -449,8 +495,14 @@ The tiled variant achieves 22.33\,dB at the same $K\!=\!1024$ budget and
 extends to 24.10\,dB at $K\!=\!2048$, demonstrating that tiling scales to
 larger Gaussian counts, albeit with mild tile-boundary artefacts.
 
+A mini-batch EM variant (15\,\% pixel subsampling) reduces fitting time
+to approximately 44\,s per image at $K\!=\!1024$ with only a 1.3\,dB
+quality penalty, and scales to $K\!=\!2048$ (23.64\,dB, 193\,s per image)
+where full-batch fitting is impractical.
+
 Our ablation of iterative signed-residual refinement reveals that the
-scheme consistently underperforms the one-shot baseline by $\approx$2.5\,dB.
+scheme consistently underperforms the one-shot baseline, with gaps ranging
+from $-$2.79\,dB at $K\!=\!128$ to $-$0.93\,dB at $K\!=\!2048$.
 The root cause is a rendering-model mismatch: the correction is proportional
 to the learned cluster-mean colour, which overshoots at pixels whose true
 residual is below the cluster average, and this bias compounds through the

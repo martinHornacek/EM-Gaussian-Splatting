@@ -1,0 +1,35 @@
+# EM standard (fullbatch) -- K=2048, Kodak images 13-24 (resume; 1-12 already done)
+# Run: python run_em_algorithm.py --config config_em_k2048_standard.yml
+
+dataset:
+  path: ./kodak
+  image_size: [256, 256]
+  selection_mode: list
+  image_list: [13,14,15,16,17,18,19,20,21,22,23,24]
+
+experiment:
+  output_dir: ./results/em_fullkodak_k2048_standard
+  save_plots: false
+  save_renders: true
+  save_raw_data: false
+  plot_interval: 100
+  run_diagnostics: false
+
+em:
+  enabled: true
+  variants: [standard]
+  n_components: 2048
+  covariance_type: full
+  max_iter: 500
+  minibatch:
+    subsample_ratio: 0.15
+    min_samples: 5000
+
+gaussian_splatting:
+  enabled: false
+
+hybrid_residual:
+  enabled: false
+
+metrics:
+  compute_lpips: false

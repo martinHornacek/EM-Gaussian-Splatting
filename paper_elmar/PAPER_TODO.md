@@ -1,5 +1,78 @@
 # ELMAR 2025 Paper — "Image Reconstruction Using EM with 2D Gaussian Mixtures"
-# PAPER_TODO.md — updated 2026-05-03
+# PAPER_TODO.md — updated 2026-05-04
+
+---
+
+## Current state summary
+
+| Item | Status |
+|------|--------|
+| EM one-shot results (K=128–1024, 24 images) | ✅ Done |
+| EM one-shot K=2048 | ⏳ Half-done (12/24 images); run rest with `config_em_k2048_standard.yml` |
+| EM mini-batch (K=128–2048, 24 images) | ✅ Done — in paper (Table III) |
+| Tiled EM results (K=128–2048, 24 images) | ✅ Done — K=256 anomaly confirmed, explained correctly |
+| Hybrid residual ablation (K=128–1024, 24 images) | ✅ Done — Table II |
+| Hybrid residual K=2048 | ✅ Done (22.71 dB) — in Table II with mini-batch reference |
+| GS gradient baseline (K=128–512, 24 images) | ❌ Invalid — no densification, 7–11 dB results unusable |
+| GS K=1024 (12/24 images) | ⏳ Partial — run rest with `config_gs_1024.yml` |
+| PSNR vs K figure | ✅ `paper_elmar/figures/fig_psnr_vs_k.pdf` |
+| Visual comparison figure | ✅ `paper_elmar/figures/fig_visual.pdf` — caption corrected to 22.43 dB |
+| Tiling structure figure | ✅ `paper_elmar/figures/fig_tiling.pdf` — caption corrected to 22.43 dB |
+| LaTeX paper draft | ✅ Updated 2026-05-04 with real numbers and new results |
+
+---
+
+## Fixes applied 2026-05-04
+
+- **FIXED:** Table I footnote was wrong ("per-tile residual refinement") — replaced with correct explanation (K_tile=16 Gaussians too few for reliable convergence)
+- **FIXED:** Experiments section same wrong cause — corrected to per-tile budget argument
+- **FIXED:** Fig 2 (visual) caption: 22.54 dB → 22.43 dB (actual kodim15 tiled K=1024)
+- **FIXED:** Fig tiling caption: same 22.54 → 22.43 correction
+- **FIXED:** "K/28" mechanical claim — replaced with defensible qualitative description
+- **ADDED:** Table II K=2048 hybrid row (22.71 dB, mini-batch EM reference 23.64 dB, Δ=−0.93 dB)
+- **ADDED:** Section 4.4 Mini-Batch EM (Table III with K=128–2048, PSNR/SSIM/RMSE/time)
+- **ADDED:** 4th contribution for mini-batch
+- **UPDATED:** Abstract: mini-batch speedup sentence added
+- **UPDATED:** Conclusion: mini-batch findings + hybrid K=2048 extension
+
+---
+
+## Remaining experiments (priority order)
+
+### High priority
+
+- [ ] **Re-run GS baseline with densification enabled** for K=128, 256, 512, 1024
+  Current results (7–11 dB at K=128–512) are invalid — no densification means GS never grows.
+  Update `config_gs_*.yml`: set `densification: true`, `pruning: true`.
+  Needed for a meaningful GS comparison in the paper.
+
+- [ ] **Complete EM one-shot K=2048** (12/24 images done)
+  Run: `python run_em_algorithm.py --config config_em_k2048_standard.yml`
+  (resume from image 13 if possible, otherwise re-run all)
+  Once complete: update Table II K=2048 EM column with actual standard EM value.
+
+- [ ] **Complete GS K=1024** (12/24 images done)
+  Run: `python run_gaussian_splatting_2d.py --config config_gs_1024.yml`
+
+### Medium priority
+
+- [ ] **Add GS comparison to Table I** once valid GS results are available.
+  Add rows: GS (K=128/256/512/1024) with PSNR, SSIM, RMSE, training time.
+
+- [ ] **Rate-distortion figure** (PSNR vs bpp) for EM one-shot, tiled, mini-batch.
+  All bpp values are computed (9 × 32 × K / (256×256) bits/pixel).
+  This would strengthen the compression framing.
+
+- [ ] **Re-run kodim21 hybrid K=2048** to confirm PSNR (21.02 dB).
+  The PSNR value looks normal but time was 23.7 min (power-loss outlier vs ~13 min normal).
+  Command: run `config_hybrid_k2048.yml` with `image_list: [21]`.
+
+### Low priority / future work (paper text already covers this)
+
+- [ ] Coverage-correction implementation in `run_hybrid_residual.py`
+- [ ] GD fine-tuning on top of EM initialisation (hybrid EM+GD)
+- [ ] Evaluation on additional datasets beyond Kodak
+
 
 ---
 

@@ -1,0 +1,56 @@
+# EM one-shot (standard + minibatch) — K=256, full Kodak 24 images
+# Run: python run_em_algorithm.py --config config_em_k256.yml
+# Produces both 'standard' and 'minibatch' rows in results.csv with fit_time.
+
+dataset:
+  path: "./kodak"
+  image_size: [256, 256]
+  selection_mode: "full"
+  random_count: 5
+  image_list: [15]
+
+experiment:
+  output_dir: ./results/em_fullkodak_k256
+  save_plots: false
+  save_renders: true
+  save_raw_data: false
+  plot_interval: 100
+  run_diagnostics: false
+  diagnostic_n_std: 2.0
+
+em:
+  enabled: true
+  variants: [minibatch]
+  n_components: 256
+  covariance_type: full
+  max_iter: 500
+  minibatch:
+    subsample_ratio: 0.15
+    min_samples: 5000
+
+gaussian_splatting:
+  enabled: false
+  primary_samples: 256
+  backup_samples: 0
+  num_epochs: 200
+  learning_rate: 0.01
+  kernel_size: 33
+  lambda_dssim: 0.2
+  densification: false
+  densification_interval: 10
+  gradient_threshold: 0.01
+  gaussian_threshold: 1.2
+  pruning: false
+
+hybrid_residual:
+  enabled: false
+  n_total: 256
+  n_init: 64
+  n_per_iter: 32
+  max_iter: 14
+  residual_threshold: 0.0001
+  oracle_clamp: false
+  correction_mode: "signed"
+
+metrics:
+  compute_lpips: false

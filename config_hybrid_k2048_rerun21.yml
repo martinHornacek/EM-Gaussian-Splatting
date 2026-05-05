@@ -1,0 +1,45 @@
+# Hybrid residual -- K=2048, kodim21 only (re-run to verify timing outlier)
+# Run: python run_hybrid_residual.py --config config_hybrid_k2048_rerun21.yml
+
+dataset:
+  path: ./kodak
+  image_size: [256, 256]
+  selection_mode: list
+  image_list: [21]
+
+experiment:
+  output_dir: ./results/hybrid_fullkodak_k2048
+  save_plots: false
+  save_renders: true
+  save_raw_data: false
+  plot_interval: 50
+  run_diagnostics: false
+
+em:
+  enabled: true
+  n_components: 2048
+  covariance_type: full
+  max_iter: 500
+  minibatch:
+    subsample_ratio: 0.15
+    min_samples: 5000
+
+gaussian_splatting:
+  enabled: false
+
+hybrid_residual:
+  enabled: true
+  n_total: 2048
+  n_init: 256
+  n_per_iter: 128
+  max_iter: 14
+  residual_threshold: 0.0001
+  step_size: 0.5
+  em_variant: standard
+  use_minibatch: false
+  compare_pure_em: false
+  visualize:
+    enabled: false
+
+metrics:
+  compute_lpips: false

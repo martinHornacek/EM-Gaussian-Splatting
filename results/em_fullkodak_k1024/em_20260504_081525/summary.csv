@@ -1,0 +1,2 @@
+variant,psnr,ssim,rmse,fit_time,bits_per_pixel,compression_ratio
+minibatch,22.4796,0.575,0.0785,44.2129,4.5,5.3333

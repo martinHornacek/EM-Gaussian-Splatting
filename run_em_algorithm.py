@@ -180,7 +180,7 @@ def run_em_algorithm(config_path='config.yml'):
         print("EM algorithm disabled in config")
         return
 
-    variants = ['standard', 'minibatch']
+    variants = config['em'].get('variants', ['standard', 'minibatch'])
     exp_cfg = config.get('experiment', {})
     run_diag = exp_cfg.get('run_diagnostics', True)
     diag_n_std = exp_cfg.get('diagnostic_n_std', 2.0)
