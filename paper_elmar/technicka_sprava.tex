@@ -1,0 +1,398 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[slovak]{babel}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{bm}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{parskip}
+
+\geometry{margin=2.5cm}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  citecolor=blue!60!black,
+  urlcolor=blue!60!black
+}
+
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red!60!black},
+  backgroundcolor=\color{gray!5},
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  showstringspaces=false,
+  columns=flexible,
+  aboveskip=8pt,
+  belowskip=8pt
+}
+
+\title{\textbf{Technická správa: EM algoritmus pre rekonštrukciu obrazu\\pomocou 2D Gaussovských zmesí}}
+\author{Martin Hornáček}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent
+Tento dokument podrobne popisuje implementáciu rekonštrukcie obrazu pomocou
+Expectation-Maximization (EM) algoritmu s~Gaussian Mixture Modelom (GMM).
+Referenčný kód sa nachádza v~súboroch \texttt{run\_em\_algorithm.py} a~\texttt{utils/em\_utils.py}.
+
+% ==========================================================================
+\section{Načítanie a predspracovanie vstupného obrázka}
+\label{sec:loading}
+% ==========================================================================
+
+Obrázok sa načítava pomocou knižnice PIL (\texttt{Image.open}), následne sa
+konvertuje na RGB a~zmenší na rozmer špecifikovaný v~konfigurácii (typicky
+$256\times256$ pixelov).
+
+\begin{lstlisting}
+# Nacitanie a konverzia
+img = Image.open(img_path).convert('RGB')
+
+# Zmena velkosti (riadena config suborom)
+img = img.resize(tuple(config['dataset']['image_size']), Image.LANCZOS)
+
+# Konverzia na numpy pole (float32, normalizovane do [0, 1])
+gt_np = np.array(img).astype(np.float32) / 255.0
+\end{lstlisting}
+
+\noindent
+Referencia v~kóde: \texttt{run\_em\_algorithm.py:218--220}.
+
+% ==========================================================================
+\section{Princíp GMM a~EM algoritmu}
+\label{sec:math}
+% ==========================================================================
+
+Táto sekcia stručne vysvetľuje princípy Gaussian Mixture Modelu a~EM
+algoritmu.  Presné matematické formulácie sú uvedené v~sprievodnom
+článku (Section~2.1).
+
+% --------------------------------------------------------------------------
+\subsection{Gaussian Mixture Model --- intuitívny prehľad}
+\label{subsec:gmm_def}
+% --------------------------------------------------------------------------
+
+Gaussian Mixture Model (GMM) modeluje obraz ako zmes $K$ Gaussiánov.
+Každý Gaussián si možno predstaviť ako rozmazanú farebnú škvrnu (\emph{splat})
+umiestnenú niekde v~obraze.  Každý komponent je definovaný tromi
+parametrami:
+\begin{itemize}[nosep]
+  \item \textbf{Stred} $\bm{\mu}_k$ --- kde je škvrna umiestnená
+        (pozícia + farba),
+  \item \textbf{Kovariančná matica} $\bm{\Sigma}_k$ --- tvar a~orientácia
+        škvrny (kruhová, eliptická, natočená),
+  \item \textbf{Váha} $\pi_k$ --- relatívna dôležitosť škvrny
+        (koľko pixelov modeluje).
+\end{itemize}
+
+V~našej implementácii sú vstupné dáta päťrozmerné: pozícia pixelu
+$(x, y)$ a~farba $(r, g, b)$, kde všetky hodnoty sú normalizované
+do~$[0,\,1]$.  Každý pixel je teda bod v~5D priestore a~GMM
+sa snaží nájsť $K$ Gaussiánov, ktoré čo najlepšie pokryjú rozloženie
+týchto bodov.
+
+\begin{lstlisting}
+# Kazdy pixel sa stane 5D bodom: [x_norm, y_norm, r, g, b]
+def _prepare_data(img_np):
+    h, w, _ = img_np.shape
+    yy, xx = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+    coords = np.stack([xx.ravel(), yy.ravel()], axis=1)
+    pixels = img_np.reshape(-1, 3)
+    coords_norm = coords / np.array([[w, h]], dtype=np.float32)
+    data = np.concatenate([coords_norm, pixels], axis=1)
+    return data, h, w  # data ma tvar (H*W, 5)
+\end{lstlisting}
+
+% --------------------------------------------------------------------------
+\subsection{EM algoritmus --- ako to funguje}
+\label{subsec:em_alg}
+% --------------------------------------------------------------------------
+
+EM (Expectation-Maximization) algoritmus iteratívne hľadá najlepšie
+parametre pre Gaussiány.  Funguje v~dvoch striedajúcich sa krokoch:
+
+\begin{enumerate}[nosep]
+  \item \textbf{E-krok (priradenie):} Pre~každý pixel sa vypočíta,
+        s~akou pravdepodobnosťou patrí ku~každému Gaussiánu.
+        Pixel blízko stredu veľkého Gaussiánu dostane vysokú zodpovednosť
+        voči tomuto komponentu, zatiaľ čo vzdialené pixely dostanú takmer
+        nulovú.
+  \item \textbf{M-krok (aktualizácia):} Na základe priradených pixelov
+        sa prepočítajú parametre každého Gaussiánu --- stred sa posunie
+        do ťažiska priradených pixelov, kovariancia sa prispôsobí ich
+        rozptylu a~váha sa upraví podľa počtu priradených pixelov.
+\end{enumerate}
+
+Tieto dva kroky sa opakujú, kým sa model nestabilizuje (konvergencia)
+alebo sa nedosiahne maximálny počet iterácií.  Dôležitou vlastnosťou
+EM algoritmu je, že kvalita modelu sa v~každej iterácii zaručene
+nezhoršuje.
+
+V~implementácii používame \texttt{sklearn.mixture.GaussianMixture}, čo
+znamená, že samotné EM výpočty sú zapuzdrené v~knižnici:
+
+\begin{lstlisting}
+# Fitovanie GMM pomocou scikit-learn
+gmm = GaussianMixture(
+    n_components=K,          # pocet Gaussianov (napr. 256)
+    covariance_type='full',  # plne kovariancne matice
+    max_iter=500,            # max. pocet EM iteracii
+    init_params='kmeans',    # inicializacia pomocou K-means
+    random_state=42
+)
+gmm.fit(data_5d)  # data_5d ma tvar (H*W, 5)
+
+# Vysledne parametre:
+# gmm.means_       : (K, 5)    -- stredy [x, y, r, g, b]
+# gmm.covariances_ : (K, 5, 5) -- kovariancne matice
+# gmm.weights_     : (K,)      -- vahy (sucet = 1)
+\end{lstlisting}
+
+% --------------------------------------------------------------------------
+\subsection{Rovnica renderovania}
+\label{subsec:render_eq}
+% --------------------------------------------------------------------------
+
+Po naučení GMM sa obraz rekonštruuje renderovaním každého Gaussiánu ako
+2D farebnej škvrny.  Pre pozíciu pixelu $\mathbf{p} = (x, y)$:
+\begin{equation}
+  I(\mathbf{p}) = \sum_{k=1}^{K} \pi_k \cdot \alpha_k(\mathbf{p})
+                  \cdot \mathbf{c}_k,
+  \label{eq:render}
+\end{equation}
+
+\noindent
+Táto rovnica hovorí, že farba každého pixelu je súčtom príspevkov
+všetkých $K$ Gaussiánov.  Jednotlivé členy majú nasledovný význam:
+
+\begin{itemize}
+  \item $\pi_k$ --- \textbf{váha Gaussiánu}: určuje, ako dôležitý je
+        daný Gaussián v~celkovej zmesi.  Gaussián s~vyššou váhou
+        pokrýva väčšiu oblasť obrazu a~jeho farebný príspevok je
+        silnejší.
+
+  \item $\alpha_k(\mathbf{p})$ --- \textbf{priestorový profil}:
+        hovorí, ako blízko je pixel $\mathbf{p}$ k~stredu Gaussiánu.
+        V~strede má hodnotu~1, smerom od stredu klesá podľa tvaru
+        kovariančnej matice (kruhovo alebo elipticky).
+        Technicky ide o~PDF Gaussiánu normalizovanú na maximálnu
+        hodnotu~1 (\emph{peak-normalizácia}).
+
+  \item $\mathbf{c}_k$ --- \textbf{farba Gaussiánu}: RGB hodnota
+        naučená EM algoritmom.  Zodpovedá priemernej farbe pixelov
+        priradených danému Gaussiánu (extrahovaná zo stredov:
+        \texttt{gmm.means\_[k, 2:5]}).
+\end{itemize}
+
+\noindent
+Výsledná farba pixelu je teda vážený súčet farebných príspevkov
+všetkých Gaussiánov.  Gaussiány blízko pixelu prispievajú viac
+(vďaka $\alpha_k$), dôležitejšie Gaussiány prispievajú viac
+(vďaka $\pi_k$) a~každý prináša svoju farbu $\mathbf{c}_k$.
+Finálna hodnota sa oreže do~$[0, 1]$.
+
+\textbf{Analógia:} Každý Gaussián je ako sprej s~určitou farbou.
+Váha $\pi_k$ udáva intenzitu striekania, $\alpha_k$ udáva, kam
+dopadá farba (hustejšie v~strede, slabšie na okrajoch),
+a~$\mathbf{c}_k$ je farba spreja.  Výsledný obraz je plátno,
+na ktoré bolo nastriekaných $K$ takýchto farebných škvŕn.
+
+Tento prístup zodpovedá $\alpha$-blendingu v~3D Gaussian Splatting,
+ale bez triedenia podľa hĺbky --- v~2D všetky Gaussiány prispievajú
+aditívne.
+
+% ==========================================================================
+\section{Príprava dát a~EM aproximácia obrazu}
+\label{sec:fitting}
+% ==========================================================================
+
+Po načítaní obrázka do numpy poľa sa každý pixel transformuje do 5D
+reprezentácie $[x, y, r, g, b]$, kde $x$ a~$y$ sú normované súradnice
+pixelu a~$r, g, b$ sú normalizované hodnoty farieb.  Táto 5D matica
+(\texttt{data\_5d}) je vstupom pre EM algoritmus.
+
+\subsection{Príprava dát}
+
+Funkcia \texttt{\_prepare\_data()} transformuje každý pixel na~5D vektor
+$[x_{\mathrm{norm}}, y_{\mathrm{norm}}, r, g, b]$.  Súradnice sú normalizované
+delením šírkou a~výškou obrazu, takže všetky hodnoty ležia v~$[0,1]$.
+Výsledné pole má tvar $(H \cdot W,\; 5)$.
+
+\begin{lstlisting}
+# Priklad: obraz 256x256 = 65536 pixelov
+data_5d, h, w = _prepare_data(gt_np)
+print(data_5d.shape)  # (65536, 5)
+print(data_5d[0])     # napr. [0.0, 0.0, 0.54, 0.42, 0.31]
+\end{lstlisting}
+
+\subsection{EM fitting}
+
+Po príprave 5D dát sa zavolá funkcia \texttt{\_fit\_em\_standard()},
+ktorá GMM nafituje a~priamo vyrenderuje výsledný obraz:
+
+\begin{lstlisting}
+def _fit_em_standard(img_np, config, n_comp):
+    data_5d, h, w = _prepare_data(img_np)
+    gmm = GaussianMixture(
+        n_components=n_comp,
+        covariance_type='full',
+        max_iter=config.get('max_iter', 100),
+        init_params='kmeans', random_state=42)
+    gmm.fit(data_5d)
+
+    # Transformacia do pixeloveho priestoru
+    cov_scale = np.array([[[w**2, w*h], [w*h, h**2]]])
+    render_np = render_gaussians(
+        gmm.means_[:, :2] * np.array([[w, h]]),  # stredy
+        gmm.covariances_[:, :2, :2] * cov_scale, # kovariancie
+        np.clip(gmm.means_[:, 2:5], 0, 1),       # farby
+        gmm.weights_, (h, w))                     # vahy
+    return render_np, gmm, data_5d, h, w
+\end{lstlisting}
+
+\noindent
+Kľúčové body:
+\begin{itemize}[nosep]
+  \item Stredy sa transformujú z~normalizovaných súradníc do pixelov
+        vynásobením šírkou a~výškou obrazu.
+  \item Priestorová časť kovariančných matíc (prvé 2 riadky/stĺpce
+        z~$5 \times 5$ matice) sa transformuje do pixelových jednotiek.
+  \item Farby sú priamo zo stredov GMM (dimenzie 3--5), orezané do $[0, 1]$.
+\end{itemize}
+
+\textbf{Mini-batch variant:} Pre rýchlejšie fitovanie existuje aj
+varianta \texttt{\_fit\_em\_minibatch()}, ktorá pracuje len na~náhodnom
+podvzorku pixelov (typicky 15\,\%), čím sa výrazne zníži výpočtový čas
+za cenu mierne nižšej kvality.
+
+\subsection{Výsledný model}
+
+Výsledkom je GMM, ktorý pre každý pixel vie určiť, s~akou pravdepodobnosťou
+patrí do ktorého Gaussiánu.  Každý Gaussián je charakterizovaný:
+\begin{itemize}[nosep]
+  \item stredom v~priestore $[x, y, r, g, b]$ --- \texttt{gmm.means\_}: $(K, 5)$,
+  \item kovariančnou maticou (tvar a~orientácia) --- \texttt{gmm.covariances\_}: $(K, 5, 5)$,
+  \item váhou (aký podiel pixelov reprezentuje) --- \texttt{gmm.weights\_}: $(K,)$.
+\end{itemize}
+
+Farba Gaussiánu je určená ako strednú hodnotu v~dimenziách~3--5:
+$\mathbf{c}_k = \texttt{gmm.means\_}[k,\; 2{:}5]$.
+
+\textbf{Váha Gaussiánu} $\pi_k$ udáva, aký podiel všetkých pixelov v~obraze
+je modelovaný daným Gaussiánom.  Súčet všetkých váh je~1.
+
+\subsection{Premenné a~ich rozmery}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Premenná} & \textbf{Rozmery} & \textbf{Popis} \\
+\midrule
+\texttt{gt\_np}          & $(H, W, 3)$    & Ground truth obraz, hodnoty v~$[0,1]$ \\
+\texttt{render\_np}      & $(H, W, 3)$    & Aproximovaný obraz \\
+\texttt{data\_5d}        & $(H{\cdot}W, 5)$ & 5D pixelové dáta \\
+\texttt{gmm.means\_}     & $(K, 5)$       & Stredy Gaussiánov \\
+\texttt{gmm.covariances\_} & $(K, 5, 5)$  & Kovariančné matice \\
+\texttt{gmm.weights\_}   & $(K,)$         & Váhy Gaussiánov \\
+\bottomrule
+\end{tabular}
+\caption{Hlavné premenné a~ich rozmery.}
+\label{tab:vars}
+\end{table}
+
+% ==========================================================================
+\section{Renderovanie obrazu pomocou Gaussiánov}
+\label{sec:rendering}
+% ==========================================================================
+
+Funkcia \texttt{render\_gaussians} vykresľuje výsledný obraz tak, že
+každý Gaussián je \uv{nastriekaný} do pixelového priestoru ako rozmazaná
+farebná škvrna.  Implementácia priamo zodpovedá rovnici~\eqref{eq:render}
+z~predchádzajúcej sekcie.
+
+\subsection{Kľúčové kroky renderovania}
+
+Nasledujúci kód ukazuje jadro renderovacej slučky:
+
+\begin{lstlisting}
+def render_gaussians(means, covs, colors, weights, image_size):
+    h, w = image_size
+    canvas     = np.zeros((h, w, 3), dtype=np.float32)
+    weight_sum = np.zeros((h, w, 1), dtype=np.float32)
+
+    # Mriežka suradnic vsetkych pixelov
+    X, Y = np.meshgrid(np.arange(w), np.arange(h))
+    pos = np.dstack((X, Y))  # (H, W, 2)
+
+    for mean, cov, color, wgt in zip(means, covs, colors, weights):
+        # 1. Vyhodnotenie Gaussianu vo vsetkych pixeloch
+        rv  = multivariate_normal(mean=mean, cov=cov)
+        pdf = rv.pdf(pos)  # (H, W) -- hustota v kazdom pixeli
+
+        # 2. Peak-normalizacia: maximum = 1 (v strede)
+        pdf = pdf / (np.max(pdf) + 1e-8)
+
+        # 3. Vahou skalovany prispevok do platna
+        pdf = pdf * wgt
+        pdf = np.expand_dims(pdf, axis=-1)  # (H, W, 1)
+
+        canvas     += pdf * color   # farebny prispevok
+        weight_sum += pdf           # akumulacia vah
+
+    # Vazeny priemer a orezanie do [0, 1]
+    render = np.divide(canvas, weight_sum,
+                       out=np.zeros_like(canvas),
+                       where=weight_sum > 1e-8)
+    return np.clip(render, 0.0, 1.0)
+\end{lstlisting}
+
+\noindent
+Popis jednotlivých krokov:
+\begin{enumerate}[nosep]
+  \item \textbf{Vyhodnotenie PDF:} Pre~každý Gaussián sa spočíta hodnota
+        normálneho rozdelenia vo~všetkých pixeloch naraz (vďaka mriežke
+        \texttt{pos}).
+  \item \textbf{Peak-normalizácia:} PDF sa vydelí svojím maximom, aby
+        hodnota v~strede Gaussiánu bola~1.  Tým sa oddelí \emph{tvar}
+        (kde Gaussián pôsobí) od \emph{intenzity} (váha $\pi_k$).
+  \item \textbf{Akumulácia:} Každý Gaussián prispeje do plátna
+        farbou $\mathbf{c}_k$ škálovanou váhou a~priestorovým profilom.
+  \item \textbf{Finalizácia:} Výsledný obraz je vážený priemer
+        príspevkov, orezaný do~$[0, 1]$.
+\end{enumerate}
+
+% ==========================================================================
+\section{Vyhodnotenie kvality}
+\label{sec:evaluation}
+% ==========================================================================
+
+Aproximovaný obraz sa porovná s~originálom pomocou týchto metrík:
+\begin{itemize}[nosep]
+  \item \textbf{MSE} --- Mean Squared Error
+  \item \textbf{RMSE} --- Root Mean Squared Error
+  \item \textbf{PSNR} --- Peak Signal-to-Noise Ratio (dB)
+  \item \textbf{SSIM} --- Structural Similarity Index
+  \item \textbf{dSSIM} --- $1 - \text{SSIM}$ (dissimilarity)
+  \item \textbf{LPIPS} --- Learned Perceptual Image Patch Similarity (voliteľne)
+\end{itemize}
+
+Výsledky sa ukladajú do zoznamu výsledkov a~renderovaný obraz sa uloží ako PNG.
+
+\end{document}

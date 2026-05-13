@@ -1,0 +1,2 @@
+variant,psnr,ssim,rmse,fit_time,bits_per_pixel,compression_ratio
+standard,24.1248,0.6616,0.0641,900.029,9.0,2.6667

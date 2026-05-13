@@ -50,9 +50,10 @@ def _fit_em_standard(img_np, config, n_comp):
         max_iter=config.get('max_iter', 100),
         init_params='kmeans', random_state=42)
     gmm.fit(data_5d)
+    cov_scale = np.array([[[w**2, w * h], [w * h, h**2]]])  # Jacobian: J @ Σ_norm @ J^T
     render_np = render_gaussians(
         gmm.means_[:, :2] * np.array([[w, h]]),
-        gmm.covariances_[:, :2, :2] * np.array([[[w, h], [w, h]]]) ** 2,
+        gmm.covariances_[:, :2, :2] * cov_scale,
         np.clip(gmm.means_[:, 2:5], 0, 1),
         gmm.weights_, (h, w))
     return render_np, gmm, data_5d, h, w
@@ -75,9 +76,10 @@ def _fit_em_minibatch(img_np, config, n_comp):
         max_iter=config.get('max_iter', 100),
         init_params='kmeans', random_state=42)
     gmm.fit(data_fit)
+    cov_scale = np.array([[[w**2, w * h], [w * h, h**2]]])  # Jacobian: J @ Σ_norm @ J^T
     render_np = render_gaussians(
         gmm.means_[:, :2] * np.array([[w, h]]),
-        gmm.covariances_[:, :2, :2] * np.array([[[w, h], [w, h]]]) ** 2,
+        gmm.covariances_[:, :2, :2] * cov_scale,
         np.clip(gmm.means_[:, 2:5], 0, 1),
         gmm.weights_, (h, w))
     return render_np, gmm, data_5d, h, w
@@ -86,7 +88,7 @@ def _fit_em_minibatch(img_np, config, n_comp):
 def _build_splat_fit(gmm, cov_type, h, w, data_5d, variant):
     """Build SplatFit from fitted GMM."""
     K = gmm.n_components
-    covs_pos = gmm.covariances_[:, :2, :2] * np.array([[[w, h], [w, h]]]) ** 2
+    covs_pos = gmm.covariances_[:, :2, :2] * np.array([[[w**2, w * h], [w * h, h**2]]])
     r = gmm.predict_proba(data_5d)
     return SplatFit(
         means_pos        = gmm.means_[:, :2] * np.array([[w, h]]),

@@ -73,8 +73,11 @@ We additionally evaluate a mini-batch variant that reduces per-image
 fitting time to under one minute at $K\!=\!1024$, at a cost of 1.3\,dB
 in mean PSNR.
 We further investigate an iterative residual-refinement scheme and find
-that it does not improve upon the one-shot EM baseline, motivating future
-work on gradient-based refinement.
+that it does not improve upon the one-shot EM baseline.
+We additionally compare fitting time against a gradient-based 2D Gaussian
+Splatting baseline (500 epochs, adaptive densification) and find that
+mini-batch EM is 24--35{\texttimes} faster per image across
+$K\!\in\!\{128,\ldots,1024\}$.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -125,6 +128,10 @@ Our contributions are:
         0.4--1.3\,dB loss for $\approx$6--44\,s fitting time per image
         across $K\!\in\!\{128,\ldots,1024\}$
         (Section~\ref{subsec:minibatch}).
+  \item A fitting-time comparison against a gradient-based 2D Gaussian
+        Splatting baseline (500 epochs, adaptive densification from
+        $K/4$ to $K$), showing that mini-batch EM is 24--35{\texttimes}
+        faster per image (Section~\ref{subsec:gs_comparison}).
 \end{enumerate}
 
 
@@ -274,7 +281,7 @@ future work.
 
 In our experiments (Section~\ref{sec:experiments}) the scheme consistently
 \emph{degrades} quality, with gaps ranging from $-$2.79\,dB at $K\!=\!128$
-to $-$0.93\,dB at $K\!=\!2048$.
+to $-$1.63\,dB at $K\!=\!2048$.
 
 \begin{figure}[!t]
 \centering
@@ -354,7 +361,8 @@ Table~\ref{tab:results} gives full per-$K$ metrics.
 \begin{table}[!t]
 \renewcommand{\arraystretch}{1.3}
 \caption{\textsc{Reconstruction quality on Kodak. Mean over 24 images.
-$\uparrow$ higher is better, $\downarrow$ lower is better.}}
+$\uparrow$ higher is better, $\downarrow$ lower is better.
+2D-GS uses adaptive densification (starts at $K/4$ Gaussians, grows to $K$, 500 epochs).}}
 \label{tab:results}
 \centering
 \begin{tabular}{|l|c|c|c|}
@@ -365,12 +373,18 @@ EM one-shot (128)  & 20.89 & 0.4917 & 0.091 \\
 EM one-shot (256)  & 21.91 & 0.5342 & 0.081 \\
 EM one-shot (512)  & 23.00 & 0.5872 & 0.071 \\
 EM one-shot (1024) & 23.79 & 0.6323 & 0.062 \\
+EM one-shot (2048) & 24.34 & 0.6654 & 0.064 \\
 \hline
 Tiled EM (128)     & 19.10 & 0.4184 & 0.111 \\
 Tiled EM (256)     & 18.35$^\dagger$ & 0.4174$^\dagger$ & 0.122$^\dagger$ \\
 Tiled EM (512)     & 20.44 & 0.4774 & 0.095 \\
 Tiled EM (1024)    & 22.33 & 0.5516 & 0.076 \\
 Tiled EM (2048)    & 24.10 & 0.6401 & 0.062 \\
+\hline
+2D-GS (128)        &  7.79 & 0.069  & 0.417 \\
+2D-GS (256)        &  8.95 & 0.130  & 0.364 \\
+2D-GS (512)        & 11.41 & 0.252  & 0.278 \\
+2D-GS (1024)       & 18.46 & 0.503 & 0.123 \\
 \hline
 \end{tabular}
 
@@ -382,7 +396,7 @@ Tiled EM (2048)    & 24.10 & 0.6401 & 0.062 \\
 
 Table~\ref{tab:hybrid} shows the effect of the iterative residual scheme
 described in Section~\ref{sec:hybrid}.
-The refinement consistently \emph{reduces} quality by 0.9--2.8\,dB
+The refinement consistently \emph{reduces} quality by 1.6--2.8\,dB
 relative to the EM baseline at every $K$ (see Table~\ref{tab:hybrid}).
 The root cause is that the correction uses a cluster-mean colour that
 overshoots at pixels below the cluster average; this bias compounds over
@@ -402,16 +416,14 @@ $K$ & \textbf{EM one-shot} & \textbf{Hybrid (14 iters)} & $\Delta$ \\
 256  & 21.91 & 19.12 & $-$2.79 \\
 512  & 23.00 & 20.38 & $-$2.61 \\
 1024 & 23.79 & 21.45 & $-$2.34 \\
-2048 & 23.64$^\dagger$ & 22.71 & $-$0.93 \\
-\hline
-\multicolumn{4}{l}{\footnotesize $^\dagger$Mini-batch EM baseline (full-batch run incomplete).}\\
+2048 & 24.34 & 22.71 & $-$1.63 \\
 \hline
 \end{tabular}
 \end{table}
 
 Extending the ablation to $K\!=\!2048$ confirms the trend: the hybrid
-achieves 22.71\,dB versus 23.64\,dB for mini-batch EM (Table~\ref{tab:minibatch}),
-a gap of $-$0.93\,dB.
+achieves 22.71\,dB versus 24.34\,dB for one-shot EM,
+a gap of $-$1.63\,dB.
 The diminishing gap as $K$ grows suggests that larger per-iteration
 sub-budgets partially offset the overshoot bias, yet the scheme still
 fails to surpass the plain EM baseline even at $K\!=\!2048$.
@@ -431,8 +443,9 @@ At $K\!=\!128$ the quality gap relative to full-batch EM is only 0.4\,dB, with
 a mean fitting time of 6\,s per image.
 At $K\!=\!1024$ the gap grows to 1.3\,dB, but fitting time is approximately
 44\,s versus several minutes for the full-batch counterpart.
-The mini-batch variant also extends naturally to $K\!=\!2048$ (23.64\,dB,
-193\,s per image), a regime where full-batch fitting becomes prohibitively slow.
+The mini-batch variant also extends to $K\!=\!2048$ (23.64\,dB, 193\,s per
+image); the full-batch counterpart achieves 24.34\,dB but requires
+$\approx$900\,s per image, a 4.7{\texttimes} slowdown for 0.70\,dB gain.
 
 \begin{table}[!t]
 \renewcommand{\arraystretch}{1.3}
@@ -462,6 +475,40 @@ $K$ & \textbf{PSNR$\uparrow$} & \textbf{SSIM$\uparrow$} & \textbf{RMSE$\downarro
          $K\!=\!2048$ (193\,s, 23.64\,dB).}
 \label{fig:speed_quality}
 \end{figure}
+
+\subsection{Comparison to 2D Gaussian Splatting}
+\label{subsec:gs_comparison}
+
+We evaluate a gradient-based 2D Gaussian Splatting (2D-GS) baseline trained
+with Adam (500 epochs, learning rate $10^{-2}$, D-SSIM + $L_1$ loss),
+using adaptive densification starting from $K/4$ primitives and growing
+to $K$.  The detailed results are shown in Table~\ref{tab:results}
+(bottom block); this section focuses on the fitting-time comparison.
+
+Table~\ref{tab:gs_time} shows mean per-image fitting time for 2D-GS versus
+mini-batch EM.  The EM variant is 24--35{\texttimes} faster at every $K$.
+The speed difference reflects the algorithmic nature of the approaches:
+EM closes each iteration in closed form for all $K$ components simultaneously,
+while gradient descent at 500 epochs accumulates step costs proportional
+to the number of primitives and pixels.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.3}
+\caption{\textsc{Per-image fitting time: 2D-GS vs.~mini-batch EM (Kodak-24).}
+  2D-GS: 500 epochs, densification from $K/4$ to $K$.}
+\label{tab:gs_time}
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+$K$ & \textbf{2D-GS (s)} & \textbf{Mini-batch EM (s)} & \textbf{Speedup} \\
+\hline
+128  &  210 &   6 & 35$\times$ \\
+256  &  384 &  13 & 30$\times$ \\
+512  &  678 &  23 & 29$\times$ \\
+1024 & 1068 &  44 & 24$\times$ \\
+\hline
+\end{tabular}
+\end{table}
 
 \subsection{Visual Comparison}
 \label{subsec:visual}
@@ -498,11 +545,11 @@ larger Gaussian counts, albeit with mild tile-boundary artefacts.
 A mini-batch EM variant (15\,\% pixel subsampling) reduces fitting time
 to approximately 44\,s per image at $K\!=\!1024$ with only a 1.3\,dB
 quality penalty, and scales to $K\!=\!2048$ (23.64\,dB, 193\,s per image)
-where full-batch fitting is impractical.
+versus 24.34\,dB at $\approx$900\,s for full-batch EM at the same $K$.
 
 Our ablation of iterative signed-residual refinement reveals that the
 scheme consistently underperforms the one-shot baseline, with gaps ranging
-from $-$2.79\,dB at $K\!=\!128$ to $-$0.93\,dB at $K\!=\!2048$.
+from $-$2.79\,dB at $K\!=\!128$ to $-$1.63\,dB at $K\!=\!2048$.
 The root cause is a rendering-model mismatch: the correction is proportional
 to the learned cluster-mean colour, which overshoots at pixels whose true
 residual is below the cluster average, and this bias compounds through the
@@ -511,9 +558,14 @@ A coverage-based correction that uses Gaussian footprints only to guide
 \emph{which} pixels are corrected (with the magnitude taken from the actual
 residual) is guaranteed non-overshooting and represents a principled fix.
 
-Combining EM initialisation with gradient-based fine-tuning and
-a full comparison against gradient-based 2D Gaussian Splatting
-remain important directions for future work.
+Comparisons against a gradient-based 2D Gaussian Splatting baseline
+(Adam optimiser, adaptive densification from $K/4$ to $K$, 500 epochs)
+show that mini-batch EM achieves 24--35{\texttimes} faster per-image
+fitting across $K\!\in\!\{128,\ldots,1024\}$, a consequence of EM's
+closed-form M-step versus iterative gradient updates.
+
+Combining EM initialisation with gradient-based fine-tuning
+remains an important direction for future work.
 
 \section*{Acknowledgment}
 This work has been supported by the projects VEGA 1/0605/23 InteRViR,
