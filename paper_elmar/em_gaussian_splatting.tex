@@ -187,6 +187,24 @@ is the peak-normalised Gaussian response, and $\mathbf{c}_k \in [0,1]^3$ is the
 RGB colour learned by the EM (the mean of the colour channels for cluster $k$).
 The pixel value is the weighted sum of colour contributions, clamped to $[0,1]$.
 
+\textbf{Intuition.}
+The equation can be read as follows: to determine the colour of a pixel, we
+ask every Gaussian in the mixture ``how much do you influence this location?''
+Each Gaussian $k$ answers with the product of three factors:
+(i)~its \emph{importance} $\pi_k$ --- how large a share of the overall image it
+represents (a Gaussian covering a big sky region has high $\pi_k$, one modelling
+a tiny highlight has low $\pi_k$);
+(ii)~its \emph{spatial reach} $\alpha_k(\mathbf{p})$ --- a value between 0 and~1
+that equals~1 at the Gaussian's centre and falls off smoothly (bell-shaped) with
+distance, so pixels far from the centre receive almost no contribution; and
+(iii)~its \emph{colour} $\mathbf{c}_k$ --- the RGB tint it ``paints'' onto the canvas.
+The final pixel colour is the sum of all these tinted contributions.
+A helpful analogy is a stage lit by $K$ coloured spotlights: each spotlight has
+a brightness ($\pi_k$), a beam profile that is brightest at the centre and dims
+towards the edges ($\alpha_k$), and a gel colour ($\mathbf{c}_k$).
+The colour observed at any point on the stage is the additive mix of all
+spotlights that reach it.
+
 This formulation connects directly to the $\alpha$-blending used in 3D Gaussian
 Splatting, but without depth sorting: in 2D all Gaussians contribute additively.
 

@@ -52,6 +52,141 @@ Expectation-Maximization (EM) algoritmu s~Gaussian Mixture Modelom (GMM).
 Referenčný kód sa nachádza v~súboroch \texttt{run\_em\_algorithm.py} a~\texttt{utils/em\_utils.py}.
 
 % ==========================================================================
+\section{Intuitívny prehľad celého procesu}
+\label{sec:overview}
+% ==========================================================================
+
+Skôr než sa ponoríme do~matematiky a~kódu, pozrime sa na celý proces
+z~výšky --- čo sa vlastne deje, prečo to funguje a~čo si pod tým
+možno predstaviť.
+
+\subsection{O čo ide: obraz ako zmes rozmazaných škvŕn}
+
+Predstavte si, že máte fotografiu a~chcete ju opísať niekomu po telefóne
+tak, aby ju vedel nakresliť.  Namiesto toho, aby ste diktovali farbu
+každého z~65\,536 pixelov (pri obraze $256\times256$), poviete napríklad:
+\emph{``V~ľavom hornom rohu je veľká modrá škvrna, v~strede je menšia
+červená elipsa natočená doprava, vpravo dole je žltý krúžok\ldots''}
+Ak zvolíte dostatočný počet takýchto škvŕn (napr.\ 256 alebo 1024),
+príjemca zvládne obraz pomerne verne zrekonštruovať.
+
+Presne toto robí náš algoritmus.  Každá ``škvrna'' je 2D Gaussián ---
+zvonový tvar, ktorý má:
+\begin{itemize}[nosep]
+  \item \textbf{polohu} (kde leží stred škvrny),
+  \item \textbf{tvar} (okrúhla, eliptická, natočená),
+  \item \textbf{farbu} (aký odtieň RGB má),
+  \item \textbf{váhu} (ako silno prispieva do výsledného obrazu).
+\end{itemize}
+
+\noindent
+Celý obraz je potom výsledkom prekrytia všetkých týchto škvŕn ---
+podobne ako keď sa na plátno postupne nastriekajú stovky vrstiev
+farebného spreja.
+
+\subsection{Prečo EM algoritmus --- analógia s~triedením loptičiek}
+
+Problém znie: \emph{Ako nájsť správne parametre (polohu, tvar, farbu,
+váhu) pre každú škvrnu?}  Na to slúži EM algoritmus --- iteratívny
+postup, ktorý sa k~správnemu výsledku dopracúva postupným
+spresňovaním.
+
+Predstavte si nasledovnú situáciu.  Na stole je rozsypaných
+65\,536 farebných guľôčok (= pixelov).  Chcete ich rozdeliť do~$K$
+hromádok tak, aby guľôčky v~jednej hromádke boli čo najpodobnejšie
+(blízko seba \emph{aj} farebne podobné).  S~každou hromádkou potom
+spojíte jednu ``škvrnu'' --- jej stred bude ťažisko hromádky, tvar
+sa odvodí z~rozptylu guľôčok v~hromádke a~farba bude ich priemerná
+farba.
+
+Lenže na začiatku neviete, ktorá guľôčka patrí do ktorej hromádky.
+EM algoritmus tento problém rieši dvoma striedajúcimi sa krokmi:
+
+\begin{enumerate}
+  \item \textbf{E-krok (``Kto kam patrí?''):}
+        Pri~pevne daných hromádkach (ich stredoch, tvaroch a~farbách)
+        pre~každú guľôčku spočítate, s~akou pravdepodobnosťou patrí
+        do~každej hromádky.  Guľôčka blízko stredu žltej hromádky, ktorá
+        je navyše žltá, dostane vysokú príslušnosť k~tejto hromádke.
+        Naopak, modrá guľôčka na opačnom konci stola dostane príslušnosť
+        takmer nulovú.
+
+  \item \textbf{M-krok (``Prepočítaj hromádky''):}
+        Teraz viete, aké guľôčky (s~akými váhami) patria do~každej
+        hromádky.  Prepočítate preto parametre: stred sa posunie
+        do~váženého ťažiska, tvar sa prispôsobí novému rozptylu
+        a~farba sa aktualizuje podľa priemernej farby priradených
+        guľôčok.
+\end{enumerate}
+
+\noindent
+Tieto dva kroky sa opakujú (typicky 100--500 iterácií), kým sa
+hromádky stabilizujú.  Na konci máte $K$ Gaussiánov, z~ktorých
+viete poskladať obraz.
+
+\subsection{Celý proces krok za krokom}
+
+Celý beh skriptu \texttt{run\_em\_algorithm.py} pozostáva
+z~nasledujúcich fáz:
+
+\begin{enumerate}
+  \item \textbf{Načítanie obrázka} --- fotografia sa načíta, zmenší na
+        požadovaný rozmer a~prevedie na pole hodnôt v~rozsahu $[0, 1]$.
+        (Sekcia~\ref{sec:loading}.)
+
+  \item \textbf{Transformácia pixelov do 5D priestoru} --- každý pixel
+        $(x, y)$ s~farbou $(r, g, b)$ sa stane bodom v~päťrozmernom priestore.
+        Pozícia aj farba sú normalizované, aby mali porovnateľný rozsah.
+        (Sekcia~\ref{sec:fitting}.)
+
+        \emph{Analógia:} Vráťme sa ku~guľôčkam --- každá guľôčka teraz
+        žije v~päťrozmernom priestore: dve súradnice udávajú, kde leží
+        na stole ($x, y$), a~tri určujú jej farbu ($r, g, b$).
+        Blízke guľôčky podobnej farby skončia v~rovnakej hromádke.
+
+  \item \textbf{EM fitting} --- na~65\,536 päťrozmerných bodov sa pustí
+        EM algoritmus z~knižnice scikit-learn, ktorý nájde $K$ Gaussiánov
+        najlepšie vysvetľujúcich rozloženie bodov.  K~dispozícii sú dva
+        varianty:
+        \begin{itemize}[nosep]
+          \item \texttt{standard} --- použijú sa všetky pixely,
+          \item \texttt{minibatch} --- použije sa len náhodných $\sim$15\,\%
+                pixelov, čo je výrazne rýchlejšie, ale mierne menej presné.
+        \end{itemize}
+        (Sekcia~\ref{sec:fitting}.)
+
+  \item \textbf{Renderovanie} --- z~naučených Gaussiánov sa rekonštruuje
+        obraz.  Každý Gaussián je ``nastriekaný'' na plátno ako rozmazaná
+        farebná škvrna a~výsledná farba každého pixelu je vážený priemer
+        príspevkov všetkých škvŕn v~danom mieste.
+        (Sekcia~\ref{sec:rendering}.)
+
+        \emph{Analógia:} Predstavte si, že $K$ ľudí stojí nad veľkým
+        bielym plátnom, každý drží sprej inej farby.  Každý nastrieka
+        svoju škvrnu --- hustejšie v~strede, slabšie na okrajoch.  Výsledný
+        obraz je to, čo vznikne po~prekrytí všetkých nástrikov.
+
+  \item \textbf{Vyhodnotenie} --- rekonštruovaný obraz sa porovná
+        s~originálom pomocou metrík PSNR, SSIM a~ďalších.
+        (Sekcia~\ref{sec:evaluation}.)
+\end{enumerate}
+
+\subsection{Čo je na tom zaujímavé}
+
+\begin{itemize}
+  \item \textbf{Kompresia:} Namiesto $H \times W \times 3$ hodnôt farieb
+        stačí uložiť $K$ Gaussiánov, kde každý je opísaný niekoľkými
+        číslami (stred, kovariancia, farba, váha).  Ak $K \ll H \cdot W$,
+        ide o~výraznú kompresiu.
+
+  \item \textbf{Spojitá reprezentácia:} Na rozdiel od~rastrového obrazu,
+        GMM je spojitý model.  Obraz je možné vykresliť v~ľubovoľnom
+        rozlíšení --- stačí vyhodnotiť Gaussiány na~hustejšej mriežke.
+        Je to podobné ako vektorová grafika (SVG) oproti bitmape (PNG).
+
+\end{itemize}
+
+% ==========================================================================
 \section{Načítanie a predspracovanie vstupného obrázka}
 \label{sec:loading}
 % ==========================================================================
@@ -172,14 +307,16 @@ gmm.fit(data_5d)  # data_5d ma tvar (H*W, 5)
 Po naučení GMM sa obraz rekonštruuje renderovaním každého Gaussiánu ako
 2D farebnej škvrny.  Pre pozíciu pixelu $\mathbf{p} = (x, y)$:
 \begin{equation}
-  I(\mathbf{p}) = \sum_{k=1}^{K} \pi_k \cdot \alpha_k(\mathbf{p})
-                  \cdot \mathbf{c}_k,
+  I(\mathbf{p}) = \frac{\sum_{k=1}^{K} \pi_k \cdot \alpha_k(\mathbf{p})
+                  \cdot \mathbf{c}_k}{\sum_{k=1}^{K} \pi_k \cdot \alpha_k(\mathbf{p})},
   \label{eq:render}
 \end{equation}
 
 \noindent
-Táto rovnica hovorí, že farba každého pixelu je súčtom príspevkov
-všetkých $K$ Gaussiánov.  Jednotlivé členy majú nasledovný význam:
+Táto rovnica hovorí, že farba každého pixelu je \emph{váženým priemerom}
+farieb všetkých $K$ Gaussiánov.  Menovateľ zabezpečuje normalizáciu ---
+bez neho by sa príspevky sčítali neobmedzene.
+Jednotlivé členy majú nasledovný význam:
 
 \begin{itemize}
   \item $\pi_k$ --- \textbf{váha Gaussiánu}: určuje, ako dôležitý je
@@ -201,21 +338,51 @@ všetkých $K$ Gaussiánov.  Jednotlivé členy majú nasledovný význam:
 \end{itemize}
 
 \noindent
-Výsledná farba pixelu je teda vážený súčet farebných príspevkov
-všetkých Gaussiánov.  Gaussiány blízko pixelu prispievajú viac
+Výsledná farba pixelu je teda vážený priemer farebných príspevkov
+všetkých Gaussiánov (menovateľ normalizuje súčet na priemer).
+Gaussiány blízko pixelu prispievajú viac
 (vďaka $\alpha_k$), dôležitejšie Gaussiány prispievajú viac
 (vďaka $\pi_k$) a~každý prináša svoju farbu $\mathbf{c}_k$.
 Finálna hodnota sa oreže do~$[0, 1]$.
 
-\textbf{Analógia:} Každý Gaussián je ako sprej s~určitou farbou.
-Váha $\pi_k$ udáva intenzitu striekania, $\alpha_k$ udáva, kam
-dopadá farba (hustejšie v~strede, slabšie na okrajoch),
-a~$\mathbf{c}_k$ je farba spreja.  Výsledný obraz je plátno,
-na ktoré bolo nastriekaných $K$ takýchto farebných škvŕn.
+\medskip
+\textbf{Analógia --- sprej na plátno.}
+Vráťme sa k~analógii zo sekcie~\ref{sec:overview}: každý Gaussián je
+ako sprej s~určitou farbou.  Tri členy rovnice priamo zodpovedajú
+trom vlastnostiam spreja:
+\begin{itemize}[nosep]
+  \item $\pi_k$ = \emph{intenzita striekania} --- silnejší sprej
+        (vyššia váha) zanechá výraznejšiu stopu,
+  \item $\alpha_k(\mathbf{p})$ = \emph{vzor dopadu} --- v~strede škvrny
+        dopadá farba najhustejšie (hodnota~1), smerom k~okrajom
+        plynulo slabne až k~nule,
+  \item $\mathbf{c}_k$ = \emph{farba spreja} --- odtieň, ktorým sa strieka.
+\end{itemize}
+Výsledný obraz je plátno, na~ktoré bolo nastriekaných $K$ takýchto
+farebných škvŕn.  Farba v~konkrétnom bode plátna je zmes všetkých
+sprejov, ktoré tam dosiahli --- vzdialené spreje tam takmer nedopadnú
+($\alpha_k \approx 0$), slabé spreje prispejú málo (malé $\pi_k$),
+ale silný sprej namierený priamo na~dané miesto ho výrazne zafarbí.
+
+\medskip
+\noindent\textbf{Zhrnutie rovnice slovami:}
+$$
+\underbrace{I(\mathbf{p})}_{\text{farba pixelu}}
+= \frac{
+  \sum_{k=1}^{K}
+  \underbrace{\pi_k}_{\substack{\text{dôležitosť}\\\text{Gaussiánu}}}
+  \cdot
+  \underbrace{\alpha_k(\mathbf{p})}_{\substack{\text{blízkosť pixelu}\\\text{k~stredu (0--1)}}}
+  \cdot
+  \underbrace{\mathbf{c}_k}_{\substack{\text{farba}\\\text{Gaussiánu}}}
+}{
+  \sum_{k=1}^{K} \pi_k \cdot \alpha_k(\mathbf{p})
+}
+$$
 
 Tento prístup zodpovedá $\alpha$-blendingu v~3D Gaussian Splatting,
 ale bez triedenia podľa hĺbky --- v~2D všetky Gaussiány prispievajú
-aditívne.
+súčasne a~výsledkom je ich vážený priemer.
 
 % ==========================================================================
 \section{Príprava dát a~EM aproximácia obrazu}

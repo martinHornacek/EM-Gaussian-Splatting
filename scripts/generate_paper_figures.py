@@ -93,7 +93,7 @@ hyb_k.append(2048);  hyb_psnr.append(_hyb2048.hybrid_psnr.mean())
 fig, ax = plt.subplots(figsize=(3.5, 2.6))
 
 ax.plot(em_k,  em_psnr,  "o-",  color=EM_COLOR,        lw=1.4, ms=5, label="EM one-shot")
-ax.plot(mb_k,  mb_psnr,  "D:",  color=MINIBATCH_COLOR,  lw=1.4, ms=4, label="Mini-batch EM")
+ax.plot(mb_k,  mb_psnr,  "D:",  color=MINIBATCH_COLOR,  lw=1.4, ms=4, label="Sub-sampled EM")
 ax.plot(ti_k,  ti_psnr,  "s--", color=TILED_COLOR,      lw=1.4, ms=5, label="Tiled EM")
 ax.plot(hyb_k, hyb_psnr, "^-.", color=HYBRID_COLOR,     lw=1.2, ms=4, label="Hybrid (residual)")
 
@@ -222,7 +222,7 @@ for t, p, k in zip(mb_time, mb_psnr, mb_k):
 ax.set_xscale("log")
 ax.set_xlabel("Mean fitting time per image (s)")
 ax.set_ylabel("Mean PSNR (dB)")
-ax.set_title("Mini-batch EM: speed–quality trade-off")
+ax.set_title("Sub-sampled EM: speed–quality trade-off")
 ax.grid(True, which="both", linestyle=":", linewidth=0.5, alpha=0.6)
 
 fig.tight_layout(pad=0.4)
